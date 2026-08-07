@@ -48,6 +48,8 @@ def main() -> int:
         for d in ("out", "in"):
             dump(API / f"window-compare-{d}.json",
                  srv.api_window_compare(conn, {"direction": [d]}))
+            dump(API / f"forward-structure-{d}.json",
+                 srv.api_forward_structure(conn, {"direction": [d]}))
         for w in (1, 7, 14, 30):
             dump(API / f"flight-movers-{w}.json",
                  srv.api_flight_movers(conn, {"window": [str(w)], "limit": ["10"]}))

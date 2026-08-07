@@ -417,6 +417,41 @@ def api_window_compare(conn, qs) -> dict:
             "network": stats(set(DEST_META)), "continents": continents}
 
 
+def api_forward_structure(conn, qs) -> dict:
+    """Per-continent forward curve: matched-basket average fare for the exact
+    departures at EVERY configured horizon (+7...+90 d), plus % vs the +7-day
+    average - how price varies with booking lead time, per region."""
+    direction = qs.get("direction", ["out"])[0]
+    windows = CONFIG["horizons_days"]
+    dates = sorted(collection_dates(conn))
+    if not dates:
+        return {"empty": True, "network": None, "continents": {}}
+    latest = dates[-1]
+    prices = {w: _exact_departure_prices(conn, latest, w, direction) for w in windows}
+    matched_all = set.intersection(*(set(prices[w]) for w in windows)) if windows else set()
+
+    def stats(scope):
+        m = sorted(matched_all & scope)
+        if not m:
+            return None
+        avgs = [round(sum(prices[w][i] for i in m) / len(m)) for w in windows]
+        base = avgs[0]
+        return {"n": len(m), "avgs": avgs,
+                "pcts": [round(100 * (a - base) / base, 1) if base else None
+                         for a in avgs]}
+
+    continents = {}
+    for cname in sorted({m["continent"] for m in DEST_META.values()}):
+        s = stats({i for i, m in DEST_META.items() if m["continent"] == cname})
+        if s:
+            continents[cname] = s
+    latest_d = date.fromisoformat(latest)
+    return {"collected_date": latest, "direction": direction, "windows": windows,
+            "departs": [(latest_d + timedelta(days=w)).isoformat() for w in windows],
+            "currency": CONFIG["currency"],
+            "network": stats(set(DEST_META)), "continents": continents}
+
+
 def api_flight_movers(conn, qs) -> dict:
     """Biggest same-flight moves: identical (route, departure) priced on the
     latest collection day and ~window days earlier."""
@@ -723,6 +758,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_drift(conn, qs))
             if path == "/api/window-compare":
                 return self._json(api_window_compare(conn, qs))
+            if path == "/api/forward-structure":
+                return self._json(api_forward_structure(conn, qs))
             if path == "/api/flight-movers":
                 return self._json(api_flight_movers(conn, qs))
             if path == "/api/departure-watch":

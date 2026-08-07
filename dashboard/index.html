@@ -212,6 +212,16 @@ td.na { color:var(--muted); }
 
     <div class="section">
       <div class="section-head">
+        <h2>Forward structure by region</h2>
+        <span class="note" id="forwardNote">average fare for the exact +7…+90-day departures,
+        each region normalized to its +7-day level · hover for dollar values</span>
+      </div>
+      <div id="forwardChart" style="width:100%;height:320px"></div>
+      <div class="pending" id="forwardPending" style="display:none"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
         <h2>Departure watch — the same flight, tracked</h2>
         <span class="note">flights leaving in +7 / +14 / +30 days: today's price for that exact departure,
         its move since yesterday, and since tracking began</span>
@@ -319,7 +329,8 @@ const state = {
   drillData:null,
   modalRoute:null, modalDir:"out", modalCache:{},
   charts:{}, polling:null, pollFails:0,
-  seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0, windowCompare:0},
+  seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0, windowCompare:0, forward:0},
+  forward:null,
 };
 const fmt = v => v==null ? "—" : "$" + Math.round(v).toLocaleString("en-US");
 const fmtD = v => (v>0?"+$":"−$") + Math.abs(Math.round(v)).toLocaleString("en-US");
@@ -337,6 +348,7 @@ function staticFile(path){
   if(p === "/api/movers") return `api/movers-${h}-${d}.json`;
   if(p === "/api/drift") return "api/drift.json";
   if(p === "/api/window-compare") return `api/window-compare-${d||"out"}.json`;
+  if(p === "/api/forward-structure") return `api/forward-structure-${d||"out"}.json`;
   if(p === "/api/flight-movers") return `api/flight-movers-${q.get("window")||1}.json`;
   if(p === "/api/departure-watch") return "api/departure-watch.json";
   if(p === "/api/refresh/status") return "api/refresh-status.json";
@@ -374,7 +386,8 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll)
 /* ---------- controls ---------- */
 function reloadView(){
   return Promise.all([loadSummary(), loadTrends(), loadDrift(),
-                      loadFlightMovers(), loadWatch(), loadWindowCompare()])
+                      loadFlightMovers(), loadWatch(), loadWindowCompare(),
+                      loadForward()])
     .then(()=>{ if(state.drillContinent) return loadDrill(state.drillContinent); })
     .then(clearErr)
     .catch(e=>showErr("Failed to load data: "+e.message));
@@ -459,6 +472,14 @@ async function loadWindowCompare(){
   catch(e){}
   if(s!==state.seq.windowCompare) return;
   state.windowCompare = r; renderKpis();
+}
+async function loadForward(){
+  const s=++state.seq.forward;
+  let r=null;
+  try{ r = await api(`/api/forward-structure?direction=${state.dir}`); }
+  catch(e){}
+  if(s!==state.seq.forward) return;
+  state.forward = r; renderForwardChart();
 }
 async function loadWatch(){
   const s=++state.seq.watch;
@@ -618,6 +639,55 @@ function renderBoard(){
       <div class="range">range ${fmt(r.min)} – ${fmt(r.max)}</div>`;
     d.onclick=()=>openDrill(r.name);
     board.appendChild(d);
+  });
+}
+
+/* ---------- forward structure by region ---------- */
+function renderForwardChart(){
+  const t=chartTheme();
+  const f=state.forward, pend=$("#forwardPending");
+  const dispose=()=>{ if(state.charts.forwardChart){ state.charts.forwardChart.dispose();
+    delete state.charts.forwardChart; } };
+  if(!f || f.empty){ pend.style.display="block"; dispose();
+    pend.textContent="Forward structure is unavailable (endpoint not reachable)."; return; }
+  const names=Object.keys(f.continents||{});
+  if(!names.length){ pend.style.display="block"; dispose();
+    pend.textContent="Not enough routes priced across all departure windows in this direction yet — fills after tomorrow's 07:30 collection.";
+    return; }
+  pend.style.display="none";
+  const c=mkChart("forwardChart");
+  const labels=f.windows.map(w=>`+${w} d`);
+  const series=names.map(name=>{
+    const s=f.continents[name];
+    return {
+      name:`${name} (${s.n})`, type:"line", symbolSize:7, lineStyle:{width:2},
+      itemStyle:{color:contColor(name)},
+      /* carry the dollar value for the tooltip */
+      data:s.pcts.map((p,i)=>({value:p, avg:s.avgs[i]})),
+    };
+  });
+  c.setOption({
+    textStyle:{fontFamily:'system-ui,-apple-system,"Segoe UI",sans-serif'},
+    grid:{left:8,right:24,top:30,bottom:8,containLabel:true},
+    legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
+    tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
+      textStyle:{color:t.ink, fontSize:12},
+      formatter:params=>{
+        const i=params[0]?.dataIndex ?? 0;
+        let html=`<b>departs ${f.departs[i]} (${labels[i]})</b>`;
+        params.forEach(p=>{
+          const d=p.data||{};
+          html+=`<br>${p.marker}${p.seriesName}: $${(d.avg||0).toLocaleString()} `
+              +`(${d.value>0?"+":""}${d.value}% vs +7 d)`;
+        });
+        return html;
+      }},
+    xAxis:{type:"category", data:labels, axisLabel:{color:t.muted, fontSize:11},
+      axisLine:{lineStyle:{color:t.axis}}, axisTick:{show:false}},
+    yAxis:{type:"value",
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>`${v>0?"+":""}${v}%`},
+      splitLine:{lineStyle:{color:t.grid}}},
+    series,
   });
 }
 
@@ -1003,6 +1073,7 @@ async function pollStatus(loop){
 function renderAll(){
   if(state.summary){ renderKpis(); renderBoard(); }
   if(state.drift) renderDriftChart();
+  if(state.forward) renderForwardChart();
   if(state.flightMovers) renderMovers();
   if(state.watch) renderWatch();
   if(state.drillContinent && state.drillRows.length) renderDrillTable();
@@ -1011,7 +1082,7 @@ function renderAll(){
 addEventListener("resize", ()=>Object.values(state.charts).forEach(c=>c.resize()));
 if(typeof ResizeObserver!=="undefined"){
   const ro=new ResizeObserver(()=>Object.values(state.charts).forEach(c=>c.resize()));
-  ["indexChart","histChart","curveChart","bookingChart"].forEach(id=>ro.observe(document.getElementById(id)));
+  ["indexChart","histChart","curveChart","bookingChart","forwardChart"].forEach(id=>ro.observe(document.getElementById(id)));
 }
 (async function(){
   if(typeof echarts==="undefined"){
