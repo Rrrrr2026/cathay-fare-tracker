@@ -241,18 +241,61 @@ def api_movers(conn, qs) -> dict:
 # economy). The official calendar re-observes every future departure daily,
 # so each flight accumulates a booking curve of observations.
 
-def _matched_pairs(conn, day_a: str, day_b: str) -> list:
-    """Calendar fares observed on BOTH days for the same flight (outbound)."""
+def _matched_pairs(conn, day_a: str, day_b: str, min_days_out: int = 7) -> list:
+    """Calendar fares observed on BOTH days for the same flight (outbound).
+
+    min_days_out excludes near-departure flights (user tracks the 7/14/30-day
+    booking window; same-week fares swing on seat scarcity, not fare policy)."""
     return conn.execute(
-        """SELECT a.destination, a.depart_date, a.price AS now_p, b.price AS then_p
+        f"""SELECT a.destination, a.depart_date, a.price AS now_p, b.price AS then_p
            FROM fares a JOIN fares b
              ON a.destination=b.destination AND a.depart_date=b.depart_date
             AND a.origin=b.origin AND a.trip_type=b.trip_type AND a.cabin=b.cabin
             AND a.source=b.source
            WHERE a.source='cathay_calendar' AND a.origin='HKG'
              AND a.collected_date=? AND b.collected_date=?
+             AND a.depart_date >= DATE(a.collected_date, '+{int(min_days_out)} days')
              AND a.price IS NOT NULL AND b.price IS NOT NULL""",
         (day_a, day_b)).fetchall()
+
+
+def _flight_cell(conn, origin: str, dest: str, depart: str,
+                 latest: str, prev: str | None) -> dict | None:
+    """One same-flight cell: today's cheapest observation of the exact
+    (origin, dest, depart) one-way flight, with calendar-vs-calendar deltas.
+    Works for both directions - inbound flights simply have no calendar rows,
+    so their deltas stay None until google re-observes the same departure."""
+    obs = conn.execute(
+        """SELECT collected_date, price, source FROM fares
+           WHERE origin=? AND destination=? AND depart_date=?
+             AND trip_type='one-way' AND price IS NOT NULL
+             AND source IN ('cathay_calendar', 'google_flights')
+           ORDER BY collected_date""", (origin, dest, depart)).fetchall()
+    today_obs = [o for o in obs if o["collected_date"] == latest]
+    if not today_obs:
+        return None
+    cheapest = min(today_obs, key=lambda o: o["price"])
+    cal = [o for o in obs if o["source"] == "cathay_calendar"]
+
+    def cal_min(day):
+        p = [o["price"] for o in cal if o["collected_date"] == day]
+        return min(p) if p else None
+
+    cal_today = cal_min(latest)
+    cal_prev = cal_min(prev) if prev else None
+    d1 = (100 * (cal_today - cal_prev) / cal_prev
+          if cal_today is not None and cal_prev else None)
+    cal_days = sorted({o["collected_date"] for o in cal})
+    first_day = cal_days[0] if cal_days else None
+    base = cal_min(first_day) if first_day else None
+    since = (100 * (cal_today - base) / base
+             if cal_today is not None and base and first_day != latest else None)
+    return {"depart": depart, "price": cheapest["price"],
+            "src": "cal" if cheapest["source"] == "cathay_calendar" else "g",
+            "d1_pct": round(d1, 1) if d1 is not None else None,
+            "since_pct": round(since, 1) if since is not None else None,
+            "since_date": first_day,
+            "n_obs": len({o["collected_date"] for o in obs})}
 
 
 def _closest_date(dates: list[str], target: str, tolerance_days: int) -> str | None:
@@ -366,15 +409,6 @@ def api_departure_watch(conn, qs) -> dict:
     latest = dates[-1]
     latest_d = date.fromisoformat(latest)
     prev = dates[-2] if len(dates) > 1 else None
-
-    def flight_obs(dest: str, depart: str) -> list:
-        return conn.execute(
-            """SELECT collected_date, price, source FROM fares
-               WHERE origin='HKG' AND destination=? AND depart_date=?
-                 AND trip_type='one-way' AND price IS NOT NULL
-                 AND source IN ('cathay_calendar', 'google_flights')
-               ORDER BY collected_date""", (dest, depart)).fetchall()
-
     prev_gap_days = ((latest_d - date.fromisoformat(prev)).days if prev else None)
 
     rows = []
@@ -382,36 +416,7 @@ def api_departure_watch(conn, qs) -> dict:
         cells = {}
         for w in windows:
             depart = (latest_d + timedelta(days=w)).isoformat()
-            obs = flight_obs(iata, depart)
-            today_obs = [o for o in obs if o["collected_date"] == latest]
-            if not today_obs:
-                cells[f"w{w}"] = None
-                continue
-            # displayed price: cheapest observation today, correctly attributed
-            cheapest = min(today_obs, key=lambda o: o["price"])
-            price = cheapest["price"]
-            # Deltas compare CALENDAR vs CALENDAR only: the two sources quote
-            # the same flight up to ~290% apart, so a cross-source comparison
-            # would fabricate fare moves (review finding, verified on live DB).
-            cal = [o for o in obs if o["source"] == "cathay_calendar"]
-            def cal_min(day):
-                p = [o["price"] for o in cal if o["collected_date"] == day]
-                return min(p) if p else None
-            cal_today = cal_min(latest)
-            cal_prev = cal_min(prev) if prev else None
-            d1 = (100 * (cal_today - cal_prev) / cal_prev
-                  if cal_today is not None and cal_prev else None)
-            cal_days = sorted({o["collected_date"] for o in cal})
-            first_day = cal_days[0] if cal_days else None
-            base = cal_min(first_day) if first_day else None
-            since = (100 * (cal_today - base) / base
-                     if cal_today is not None and base and first_day != latest else None)
-            cells[f"w{w}"] = {"depart": depart, "price": price,
-                              "src": "cal" if cheapest["source"] == "cathay_calendar" else "g",
-                              "d1_pct": round(d1, 1) if d1 is not None else None,
-                              "since_pct": round(since, 1) if since is not None else None,
-                              "since_date": first_day,
-                              "n_obs": len({o["collected_date"] for o in obs})}
+            cells[f"w{w}"] = _flight_cell(conn, "HKG", iata, depart, latest, prev)
         if any(cells.values()):
             rows.append({"iata": iata, "city": meta["city"], "country": meta["country"],
                          "continent": meta["continent"], "region": meta["region"],
@@ -423,46 +428,35 @@ def api_departure_watch(conn, qs) -> dict:
 
 
 def api_continent(conn, name: str, qs) -> dict:
-    horizon = int(qs.get("horizon", ["30"])[0])
-    dates = collection_dates(conn)
+    """Route detail for one continent: the exact one-way flights departing
+    +7/+14/+30 days, direction-aware. No round-trip data (user requirement)."""
+    direction = qs.get("direction", ["out"])[0]
+    windows = [7, 14, 30]
+    dates = sorted(collection_dates(conn))
     if not dates:
         return {"empty": True, "rows": []}
-    latest, prev = dates[0], (dates[1] if len(dates) > 1 else None)
-
-    google = _google_fares(conn, latest, horizon)
-    cal = _calendar_fallback(conn, latest, horizon)
-    google_prev = _google_fares(conn, prev, horizon) if prev else {}
-    cal_prev = _calendar_fallback(conn, prev, horizon) if prev else {}
-
-    official = {r["destination"]: r for r in conn.execute(
-        """SELECT destination, price, depart_date, flight_info FROM fares
-           WHERE collected_date=? AND source='cathay_api' AND origin='HKG'
-           ORDER BY collected_ts""", (latest,))}  # newest same-day snapshot wins
+    latest, prev = dates[-1], (dates[-2] if len(dates) > 1 else None)
+    latest_d = date.fromisoformat(latest)
+    prev_gap_days = ((latest_d - date.fromisoformat(prev)).days if prev else None)
 
     rows = []
     for iata, meta in DEST_META.items():
         if meta["continent"] != name:
             continue
-        out_price, out_src, out_row = _route_fare(google, cal, iata, "out")
-        in_price, in_src, in_row = _route_fare(google, cal, iata, "in")
-        prev_out, _, _ = _route_fare(google_prev, cal_prev, iata, "out")
-        prev_in, _, _ = _route_fare(google_prev, cal_prev, iata, "in")
-        off = official.get(iata)
+        origin, dest = ("HKG", iata) if direction == "out" else (iata, "HKG")
+        cells = {}
+        for w in windows:
+            depart = (latest_d + timedelta(days=w)).isoformat()
+            cells[f"w{w}"] = _flight_cell(conn, origin, dest, depart, latest, prev)
         rows.append({
             "iata": iata, "city": meta["city"], "country": meta["country"],
-            "region": meta["region"], "airport": meta.get("airport"),
-            "out_price": out_price, "out_src": out_src,
-            "out_info": out_row["flight_info"] if out_row else None,
-            "in_price": in_price, "in_src": in_src,
-            "in_info": in_row["flight_info"] if in_row else None,
-            "prev_out_price": prev_out,
-            "prev_in_price": prev_in,
-            "official_rt": off["price"] if off else None,
-            "official_rt_info": off["flight_info"] if off else None,
+            "region": meta["region"], "airport": meta.get("airport"), **cells,
         })
-    rows.sort(key=lambda r: (r["out_price"] is None, r["out_price"] or 0))
-    return {"collected_date": latest, "prev_date": prev, "horizon": horizon,
-            "currency": CONFIG["currency"], "continent": name, "rows": rows}
+    rows.sort(key=lambda r: r["city"])
+    return {"collected_date": latest, "prev_date": prev,
+            "prev_gap_days": prev_gap_days, "windows": windows,
+            "direction": direction, "currency": CONFIG["currency"],
+            "continent": name, "rows": rows}
 
 
 def api_route(conn, origin: str, dest: str) -> dict:

@@ -57,9 +57,10 @@ def main() -> int:
                 dump(API / f"summary-{h}-{d}.json", srv.api_summary(conn, qs))
                 dump(API / f"trends-{h}-{d}.json", srv.api_trends(conn, qs))
                 n += 2
-            for name in continents:
-                dump(API / f"continent-{name.replace(' ', '_')}-{h}.json",
-                     srv.api_continent(conn, name, {"horizon": [str(h)]}))
+        for name in continents:
+            for d in ("out", "in"):
+                dump(API / f"continent-{name.replace(' ', '_')}-{d}.json",
+                     srv.api_continent(conn, name, {"direction": [d]}))
                 n += 1
         for iata in srv.DEST_META:
             dump(API / f"route-HKG-{iata}.json", srv.api_route(conn, "HKG", iata))

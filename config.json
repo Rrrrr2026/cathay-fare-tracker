@@ -11,7 +11,7 @@
   },
   "cathay_api": {
     "enabled": true,
-    "open_search": true,
+    "open_search": false,
     "calendar": true,
     "delay_seconds": 0.8
   },

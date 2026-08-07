@@ -256,18 +256,18 @@ td.na { color:var(--muted); }
       <div style="overflow-x:auto"><table id="drillTable">
         <thead><tr>
           <th data-k="city">Destination</th><th data-k="iata">Code</th>
-          <th data-k="out_price">From HKG</th><th data-k="in_price">To HKG</th>
-          <th data-k="delta">Δ day</th><th data-k="pct">Δ %</th>
-          <th data-k="official_rt">Official RT*</th>
+          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
+          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
+          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
         </tr></thead>
         <tbody></tbody>
       </table></div>
       <p class="footer-note" style="border:0;margin-top:8px;padding-top:0">
-      * Official lowest cached round-trip from Cathay Pacific's own booking API
-      (dates float to the cheapest pair; converted from HKD at the day's rate).
-      Δ follows the selected direction. <b>cal</b>-tagged fares come from
-      Cathay's official per-day calendar where Google Flights lists no priced
-      CX itinerary.</p>
+      One-way single-flight prices only, for the exact departures +7/+14/+30
+      days out. <b>cal</b> = Cathay's official per-day calendar, <b>g</b> =
+      Google Flights lowest CX itinerary. Δ compares the SAME flight across
+      collection days (official calendar only, so inbound Δ stays "—" until
+      Google re-observes a departure).</p>
     </div>
   </div>
 
@@ -315,7 +315,8 @@ const state = {
   dir:"out", horizon:30, meta:null, summary:null, trends:null,
   drift:null, flightMovers:null, moverWindow:1, watch:null,
   drillContinent:null, drillRows:[], regionFilter:null,
-  sortKey:"out_price", sortAsc:true, watchSortKey:"continent", watchSortAsc:true,
+  sortKey:"city", sortAsc:true, watchSortKey:"continent", watchSortAsc:true,
+  drillData:null,
   modalRoute:null, modalDir:"out", modalCache:{},
   charts:{}, polling:null, pollFails:0,
   seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0},
@@ -339,7 +340,7 @@ function staticFile(path){
   if(p === "/api/departure-watch") return "api/departure-watch.json";
   if(p === "/api/refresh/status") return "api/refresh-status.json";
   let m = p.match(/^\/api\/continent\/([^/]+)$/);
-  if(m) return `api/continent-${decodeURIComponent(m[1]).replace(/ /g,"_")}-${h}.json`;
+  if(m) return `api/continent-${decodeURIComponent(m[1]).replace(/ /g,"_")}-${d||"out"}.json`;
   m = p.match(/^\/api\/route\/([A-Z]{3})\/([A-Z]{3})$/);
   if(m) return `api/route-${m[1]}-${m[2]}.json`;
   return path;
@@ -460,10 +461,10 @@ async function loadWatch(){
 }
 async function loadDrill(name){
   const s=++state.seq.drill;
-  const d = await api(`/api/continent/${encodeURIComponent(name)}?horizon=${state.horizon}`);
+  const d = await api(`/api/continent/${encodeURIComponent(name)}?direction=${state.dir}`);
   if(s!==state.seq.drill) return;
   state.drillContinent = name;
-  state.drillRows = d.rows; state.regionFilter=null;
+  state.drillRows = d.rows; state.drillData = d; state.regionFilter=null;
   renderDrill(d);
   $("#drillCard").scrollIntoView({behavior:"smooth", block:"nearest"});
 }
@@ -677,7 +678,7 @@ function renderWatch(){
   /* label the Δ columns with the REAL gap to the previous collection */
   const gap = w.prev_gap_days || 1;
   [...$("#watchTable thead tr").children].forEach(th=>{
-    if(th.dataset.k && th.dataset.k.startsWith("c")) th.textContent=`Δ ${gap}d / since`;
+    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)) th.textContent=`Δ ${gap}d / since`;
   });
   const k=state.watchSortKey, asc=state.watchSortAsc;
   const val=r=>{
@@ -714,7 +715,8 @@ function renderDrill(d){
   $("#drillCard").style.display="";
   $("#drillTitle").textContent = `${d.continent} — route detail`;
   $("#drillSub").textContent =
-    `departure +${d.horizon} d · collected ${d.collected_date} · click a route for its history`;
+    `one-way ${d.direction==="out"?"from":"to"} Hong Kong · exact departures +7/+14/+30 d · ` +
+    `collected ${d.collected_date} · click a route for its booking curves`;
   const regions=[...new Set(state.drillRows.map(r=>r.region))];
   const chips=$("#regionChips"); chips.innerHTML="";
   if(regions.length>1){
@@ -741,38 +743,32 @@ function renderDrill(d){
   document.querySelectorAll(".ccard").forEach(c=>
     c.classList.toggle("on", c.querySelector(".name")?.textContent===d.continent));
 }
-function rowDelta(r){
-  const now = state.dir==="out" ? r.out_price : r.in_price;
-  const prev = state.dir==="out" ? r.prev_out_price : r.prev_in_price;
-  if(now==null || prev==null) return [null, null];
-  return [now-prev, prev?100*(now-prev)/prev:null];
-}
 function renderDrillTable(){
   const tb=$("#drillTable tbody"); tb.innerHTML="";
   let rows=state.drillRows.filter(r=>!state.regionFilter || r.region===state.regionFilter);
   const k=state.sortKey;
+  const val=r=>{
+    const m={p7:["w7","price"],p14:["w14","price"],p30:["w30","price"],
+             c7:["w7","d1_pct"],c14:["w14","d1_pct"],c30:["w30","d1_pct"]}[k];
+    return m ? (r[m[0]]?.[m[1]] ?? null) : r[k];
+  };
   rows=[...rows].sort((a,b)=>{
-    let va, vb;
-    if(k==="delta"){ va=rowDelta(a)[0]; vb=rowDelta(b)[0]; }
-    else if(k==="pct"){ va=rowDelta(a)[1]; vb=rowDelta(b)[1]; }
-    else { va=a[k]; vb=b[k]; }
+    const va=val(a), vb=val(b);
     if(va==null) return 1; if(vb==null) return -1;
-    if(typeof va==="string") return state.sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    if(typeof va==="string"){ const c=va.localeCompare(vb); return state.sortAsc?c:-c; }
     return state.sortAsc?va-vb:vb-va;
+  });
+  /* label Δ headers with the real gap to the previous collection */
+  const gap = state.drillData?.prev_gap_days || 1;
+  [...$("#drillTable thead tr").children].forEach(th=>{
+    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)) th.textContent=`Δ ${gap}d / since`;
   });
   rows.forEach(r=>{
     const tr=document.createElement("tr");
-    const src = s => s==="cathay_calendar" ? '<span class="src">cal</span>' : "";
-    const [dl, pc] = rowDelta(r);
     tr.innerHTML=`<td><b>${r.city}</b> <span style="color:var(--muted)">${r.country}</span></td>
       <td>${r.iata}</td>
-      <td${r.out_price==null?' class="na"':''}>${fmt(r.out_price)}${src(r.out_src)}</td>
-      <td${r.in_price==null?' class="na"':''}>${fmt(r.in_price)}${src(r.in_src)}</td>
-      <td>${dl==null?'<span style="color:var(--muted)">—</span>':deltaSpan(dl,null)}</td>
-      <td>${pc==null?'<span style="color:var(--muted)">—</span>'
-        :`<span class="${pc<0?"delta-down":"delta-up"}">${pc>0?"+":""}${pc.toFixed(1)}%</span>`}</td>
-      <td${r.official_rt==null?' class="na"':''}>${fmt(r.official_rt)}</td>`;
-    tr.onclick=()=>openModal(r);
+      ${watchCell(r.w7).join("")}${watchCell(r.w14).join("")}${watchCell(r.w30).join("")}`;
+    tr.onclick=()=>openModal(r, r.w7?.depart || r.w14?.depart || r.w30?.depart, state.dir);
     tb.appendChild(tr);
   });
 }
@@ -794,8 +790,7 @@ async function openModal(row, focusDepart, dir){
   [...$("#modalDirSeg").children].forEach(b=>
     b.classList.toggle("on", b.dataset.dir===state.modalDir));
   $("#modalTitle").textContent=`Hong Kong ⇄ ${row.city} (${row.iata})`;
-  $("#modalSub").textContent=`${row.airport||""} · ${row.region||""}` +
-    (row.official_rt ? ` · official lowest round-trip ${fmt(row.official_rt)}` : "");
+  $("#modalSub").textContent=`${row.airport||""} · ${row.region||""} · one-way single-flight fares`;
   $("#modalBack").classList.add("show");
   try{ await renderModalCharts(); }
   catch(e){ showErr("Failed to load route history: "+e.message); }
