@@ -45,6 +45,9 @@ def main() -> int:
         dump(API / "meta.json", srv.api_meta(conn))
         dump(API / "drift.json", srv.api_drift(conn, {}))
         dump(API / "departure-watch.json", srv.api_departure_watch(conn, {}))
+        for d in ("out", "in"):
+            dump(API / f"window-compare-{d}.json",
+                 srv.api_window_compare(conn, {"direction": [d]}))
         for w in (1, 7, 14, 30):
             dump(API / f"flight-movers-{w}.json",
                  srv.api_flight_movers(conn, {"window": [str(w)], "limit": ["10"]}))

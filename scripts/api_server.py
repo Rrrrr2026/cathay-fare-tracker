@@ -377,6 +377,46 @@ def api_drift(conn, qs) -> dict:
             "drift": drift, "index": index}
 
 
+def api_window_compare(conn, qs) -> dict:
+    """The forward structure: average fare for the exact +7 / +14 / +30-day
+    departures, restricted to routes priced in ALL three windows so the
+    percentages compare identical route baskets (simple average, cheapest
+    observed one-way per exact departure)."""
+    direction = qs.get("direction", ["out"])[0]
+    windows = [7, 14, 30]
+    dates = sorted(collection_dates(conn))
+    if not dates:
+        return {"empty": True, "network": None, "continents": {}}
+    latest = dates[-1]
+    prices = {w: _exact_departure_prices(conn, latest, w, direction) for w in windows}
+    matched = set(prices[7]) & set(prices[14]) & set(prices[30])
+
+    def pct(a, b):
+        return round(100 * (a - b) / b, 1) if b else None
+
+    def stats(scope):
+        m = sorted(matched & scope)
+        if not m:
+            return None
+        avgs = {f"w{w}": round(sum(prices[w][i] for i in m) / len(m)) for w in windows}
+        return {"n": len(m), **avgs,
+                "pct_14_vs_7": pct(avgs["w14"], avgs["w7"]),
+                "pct_30_vs_7": pct(avgs["w30"], avgs["w7"]),
+                "pct_30_vs_14": pct(avgs["w30"], avgs["w14"])}
+
+    continents = {}
+    for cname in sorted({m["continent"] for m in DEST_META.values()}):
+        s = stats({i for i, m in DEST_META.items() if m["continent"] == cname})
+        if s:
+            continents[cname] = s
+    latest_d = date.fromisoformat(latest)
+    return {"collected_date": latest, "direction": direction, "windows": windows,
+            "departs": {f"w{w}": (latest_d + timedelta(days=w)).isoformat()
+                        for w in windows},
+            "currency": CONFIG["currency"],
+            "network": stats(set(DEST_META)), "continents": continents}
+
+
 def api_flight_movers(conn, qs) -> dict:
     """Biggest same-flight moves: identical (route, departure) priced on the
     latest collection day and ~window days earlier."""
@@ -681,6 +721,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_movers(conn, qs))
             if path == "/api/drift":
                 return self._json(api_drift(conn, qs))
+            if path == "/api/window-compare":
+                return self._json(api_window_compare(conn, qs))
             if path == "/api/flight-movers":
                 return self._json(api_flight_movers(conn, qs))
             if path == "/api/departure-watch":

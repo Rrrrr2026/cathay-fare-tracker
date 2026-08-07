@@ -314,13 +314,13 @@ const CONT_COLOR_SLOT = { "Africa":"--s1","Americas":"--s2","Asia":"--s3",
                           "Australia":"--s4","Europe":"--s5","Middle East":"--s6" };
 const state = {
   dir:"out", horizon:30, meta:null, summary:null, trends:null,
-  drift:null, flightMovers:null, moverWindow:1, watch:null,
+  drift:null, flightMovers:null, moverWindow:1, watch:null, windowCompare:null,
   drillContinent:null, drillRows:[], regionFilter:null,
   sortKey:"city", sortAsc:true, watchSortKey:"continent", watchSortAsc:true,
   drillData:null,
   modalRoute:null, modalDir:"out", modalCache:{},
   charts:{}, polling:null, pollFails:0,
-  seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0},
+  seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0, windowCompare:0},
 };
 const fmt = v => v==null ? "—" : "$" + Math.round(v).toLocaleString("en-US");
 const fmtD = v => (v>0?"+$":"−$") + Math.abs(Math.round(v)).toLocaleString("en-US");
@@ -337,6 +337,7 @@ function staticFile(path){
   if(p === "/api/trends") return `api/trends-${h}-${d}.json`;
   if(p === "/api/movers") return `api/movers-${h}-${d}.json`;
   if(p === "/api/drift") return "api/drift.json";
+  if(p === "/api/window-compare") return `api/window-compare-${d||"out"}.json`;
   if(p === "/api/flight-movers") return `api/flight-movers-${q.get("window")||1}.json`;
   if(p === "/api/departure-watch") return "api/departure-watch.json";
   if(p === "/api/refresh/status") return "api/refresh-status.json";
@@ -374,7 +375,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll)
 /* ---------- controls ---------- */
 function reloadView(){
   return Promise.all([loadSummary(), loadTrends(), loadDrift(),
-                      loadFlightMovers(), loadWatch()])
+                      loadFlightMovers(), loadWatch(), loadWindowCompare()])
     .then(()=>{ if(state.drillContinent) return loadDrill(state.drillContinent); })
     .then(clearErr)
     .catch(e=>showErr("Failed to load data: "+e.message));
@@ -452,6 +453,14 @@ async function loadFlightMovers(){
   if(s!==state.seq.movers) return;
   state.flightMovers = r; renderMovers();
 }
+async function loadWindowCompare(){
+  const s=++state.seq.windowCompare;
+  let r=null;
+  try{ r = await api(`/api/window-compare?direction=${state.dir}`); }
+  catch(e){}
+  if(s!==state.seq.windowCompare) return;
+  state.windowCompare = r; renderKpis();
+}
 async function loadWatch(){
   const s=++state.seq.watch;
   let r=null;
@@ -488,16 +497,9 @@ function mkChart(id){
   return state.charts[id];
 }
 
-/* ---------- KPI strip ---------- */
+/* ---------- KPI strip: same-flight drift + the +7/+14/+30 forward structure ---------- */
 function renderKpis(){
   const s=state.summary; if(!s||s.empty) return;
-  let mn=null, mx=null, mnC="", mxC="";
-  s.continents.forEach(c=>{
-    if(c.min!=null && (mn==null||c.min<mn)){ mn=c.min; mnC=c.name; }
-    if(c.max!=null && (mx==null||c.max>mx)){ mx=c.max; mxC=c.name; }
-  });
-  const priced=s.continents.reduce((a,c)=>a+c.routes_priced,0);
-  const total=s.continents.reduce((a,c)=>a+c.routes_total,0);
   /* overall 1-day same-flight drift: n-weighted mean of the latest matched drift */
   let driftTxt='<span style="color:var(--muted);font-size:18px">from day 2</span>';
   let driftSub="matched identical flights vs yesterday";
@@ -515,17 +517,26 @@ function renderKpis(){
       driftSub=`across ${n.toLocaleString()} matched flights vs yesterday`;
     }
   }
+  /* forward structure: matched-basket averages for the exact +7/+14/+30 departures */
+  const wc=state.windowCompare, net=wc?.network;
+  const pctSpan=p=> p==null ? "" :
+    `<span class="${p<0?"delta-down":p>0?"delta-up":""}">${p>0?"+":""}${p.toFixed(1)}% vs +7 d</span>`;
+  const wTile=(w, pKey)=>{
+    if(!net) return `<div class="kpi"><div class="microlabel">Departing in ${w} days</div>
+      <div class="v serif" style="font-size:18px;color:var(--muted)">fills tomorrow</div>
+      <div class="d">not enough routes priced in all three windows yet</div></div>`;
+    const avg=net[`w${w}`];
+    const sub = w===7
+      ? `${net.n} routes priced in all three windows · dep ${wc.departs.w7.slice(5)}`
+      : `${pctSpan(net[pKey])} · dep ${wc.departs["w"+w].slice(5)}`;
+    return `<div class="kpi"><div class="microlabel">Departing in ${w} days</div>
+      <div class="v serif">${fmt(avg)}</div><div class="d">${sub}</div></div>`;
+  };
   $("#kpiStrip").innerHTML = `
     <div class="kpi"><div class="microlabel">Same-flight drift (1 day)</div>
       <div class="v serif">${driftTxt}</div>
       <div class="d">${driftSub}</div></div>
-    <div class="kpi"><div class="microlabel">Cheapest route fare</div>
-      <div class="v serif">${fmt(mn)}</div><div class="d">${mnC}</div></div>
-    <div class="kpi"><div class="microlabel">Priciest route fare</div>
-      <div class="v serif">${fmt(mx)}</div><div class="d">${mxC}</div></div>
-    <div class="kpi"><div class="microlabel">Routes priced</div>
-      <div class="v serif">${priced}<small> / ${total}</small></div>
-      <div class="d">${state.dir==="out"?"outbound":"inbound"} · +${state.horizon} d departure</div></div>`;
+    ${wTile(7)} ${wTile(14,"pct_14_vs_7")} ${wTile(30,"pct_30_vs_7")}`;
 }
 
 /* ---------- same-flight fare index (matched, cumulative, base 100) ---------- */
