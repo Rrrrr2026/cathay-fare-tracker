@@ -495,10 +495,10 @@ def api_flight_movers(conn, qs) -> dict:
 
 
 def api_departure_watch(conn, qs) -> dict:
-    """For each route: the specific flights departing +7, +14 and +30 days from
-    the latest collection day - today's price for that exact departure, its
-    change since yesterday's observation and since first observation."""
-    windows = [7, 14, 30]
+    """For each route: the specific flights departing at every configured
+    horizon (+7...+90 d) from the latest collection day - today's price for
+    that exact departure (deltas vs prior observations ride along)."""
+    windows = CONFIG["horizons_days"]
     dates = sorted(collection_dates(conn))
     if not dates:
         return {"windows": windows, "rows": []}
@@ -527,7 +527,7 @@ def api_continent(conn, name: str, qs) -> dict:
     """Route detail for one continent: the exact one-way flights departing
     +7/+14/+30 days, direction-aware. No round-trip data (user requirement)."""
     direction = qs.get("direction", ["out"])[0]
-    windows = [7, 14, 30]
+    windows = CONFIG["horizons_days"]
     dates = sorted(collection_dates(conn))
     if not dates:
         return {"empty": True, "rows": []}

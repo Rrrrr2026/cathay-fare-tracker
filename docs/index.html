@@ -230,32 +230,33 @@ td.na { color:var(--muted); }
       <div style="overflow-x:auto"><table id="drillTable">
         <thead><tr>
           <th data-k="city">Destination</th><th data-k="iata">Code</th>
-          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
-          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
-          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
+          <th data-k="p7">+7 d</th><th data-k="p14">+14 d</th>
+          <th data-k="p30">+30 d</th><th data-k="p60">+60 d</th>
+          <th data-k="p90">+90 d</th>
         </tr></thead>
         <tbody></tbody>
       </table></div>
       <p class="footer-note" style="border:0;margin-top:8px;padding-top:0">
-      One-way single-flight prices only, for the exact departures +7/+14/+30
-      days out. <b>cal</b> = Cathay's official per-day calendar, <b>g</b> =
-      Google Flights lowest CX itinerary. Δ compares the SAME flight across
-      collection days (official calendar only, so inbound Δ stays "—" until
-      Google re-observes a departure).</p>
+      One-way single-flight prices for the exact departures +7 … +90 days out;
+      the small % on later windows compares against that route's +7-day fare
+      (green = departing later is cheaper). <b>cal</b> = Cathay's official
+      per-day calendar, <b>g</b> = Google Flights lowest CX itinerary. Click a
+      route for its booking curves; day-over-day moves of the same flight live
+      in the Movers board and the fare index.</p>
     </div>
 
     <div class="section">
       <div class="section-head">
-        <h2>Departure watch — the same flight, tracked</h2>
-        <span class="note">flights leaving in +7 / +14 / +30 days: today's price for that exact departure,
-        its move since yesterday, and since tracking began</span>
+        <h2>Route fares by departure window</h2>
+        <span class="note">what the same route costs departing +7 / +14 / +30 / +60 / +90 days out ·
+        % vs that route's +7-day fare · <span class="delta-down">green = later is cheaper</span></span>
       </div>
       <div style="overflow-x:auto"><table id="watchTable">
         <thead><tr>
           <th data-k="city">Destination</th><th data-k="continent">Continent</th>
-          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
-          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
-          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
+          <th data-k="p7">+7 d</th><th data-k="p14">+14 d</th>
+          <th data-k="p30">+30 d</th><th data-k="p60">+60 d</th>
+          <th data-k="p90">+90 d</th>
         </tr></thead>
         <tbody></tbody>
       </table></div>
@@ -741,43 +742,36 @@ function renderMovers(){
   });
 }
 
-/* ---------- departure watch ---------- */
-function watchCell(c){
-  if(!c) return ['<td class="na">—</td>','<td class="na">—</td>'];
-  const pctSpan=(p)=> p==null ? '<span style="color:var(--muted)">—</span>'
-    : `<span class="${p<0?"delta-down":p>0?"delta-up":""}">${p>0?"+":""}${p.toFixed(1)}%</span>`;
-  return [
-    `<td title="departs ${c.depart} · ${c.n_obs} observation(s)">${fmt(c.price)}<span class="src">${c.src}</span></td>`,
-    `<td>${pctSpan(c.d1_pct)} / ${pctSpan(c.since_pct)}</td>`,
-  ];
+/* ---------- route fares by departure window ---------- */
+const TABLE_WINDOWS=[7,14,30,60,90];
+function fareCell(c, base){
+  if(!c) return '<td class="na">—</td>';
+  let pctHtml="";
+  if(base && base!==c && base.price){
+    const p=100*(c.price-base.price)/base.price;
+    const flat=Math.abs(p)<0.05;
+    pctHtml=` <span class="${flat?"":p<0?"delta-down":"delta-up"}" style="font-size:11px${flat?";color:var(--muted)":""}">${flat?"0.0":(p>0?"+":"")+p.toFixed(1)}%</span>`;
+  }
+  return `<td title="departs ${c.depart} · ${c.n_obs} observation(s)">`
+       + `${fmt(c.price)}<span class="src">${c.src}</span>${pctHtml}</td>`;
+}
+function windowSortVal(r, k){
+  const m=/^p(\d+)$/.exec(k);
+  return m ? (r["w"+m[1]]?.price ?? null) : r[k];
+}
+function firstDepart(r){
+  for(const w of TABLE_WINDOWS){ if(r["w"+w]?.depart) return r["w"+w].depart; }
+  return null;
 }
 function renderWatch(){
   const w=state.watch, pend=$("#watchPending"), tb=$("#watchTable tbody");
   tb.innerHTML="";
   if(!w){ pend.style.display="block";
-    pend.textContent="Departure watch is unavailable (endpoint not reachable)."; return; }
-  pend.style.display = w.prev_date ? "none" : "block";
-  if(!w.prev_date) pend.textContent =
-    "Prices shown are today's for these exact departures. The Δ columns (change since yesterday / since tracking began) fill from day 2 as the same flights are re-observed.";
-  /* label the Δ columns with the REAL gap to the previous collection */
-  const gap = w.prev_gap_days || 1;
-  [...$("#watchTable thead tr").children].forEach(th=>{
-    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)){
-      th.textContent=`Δ ${gap}d / since`;
-      th.title=`Same flight, re-priced: Δ ${gap}d = change vs the previous collection `
-        +`(${gap} day(s) ago) · since = cumulative change since tracking of that departure began. `
-        +`Fills from the second observation day.`;
-    }
-  });
+    pend.textContent="Route fares are unavailable (endpoint not reachable)."; return; }
+  pend.style.display="none";
   const k=state.watchSortKey, asc=state.watchSortAsc;
-  const val=r=>{
-    if(k==="city") return r.city; if(k==="continent") return r.continent;
-    const m={p7:["w7","price"],p14:["w14","price"],p30:["w30","price"],
-             c7:["w7","d1_pct"],c14:["w14","d1_pct"],c30:["w30","d1_pct"]}[k];
-    return m ? (r[m[0]]?.[m[1]] ?? null) : r.city;
-  };
   const rows=[...w.rows].sort((a,b)=>{
-    const va=val(a), vb=val(b);
+    const va=windowSortVal(a,k), vb=windowSortVal(b,k);
     if(va==null) return 1; if(vb==null) return -1;
     if(typeof va==="string"){ const c=va.localeCompare(vb); return asc?c:-c; }
     return asc?va-vb:vb-va;
@@ -786,8 +780,8 @@ function renderWatch(){
     const tr=document.createElement("tr");
     tr.innerHTML=`<td><b>${r.city}</b> <span style="color:var(--muted)">${r.iata}</span></td>
       <td style="text-align:left">${r.continent}</td>
-      ${watchCell(r.w7).join("")}${watchCell(r.w14).join("")}${watchCell(r.w30).join("")}`;
-    tr.onclick=()=>openModal(r, r.w7?.depart || r.w14?.depart || r.w30?.depart, "out");
+      ${TABLE_WINDOWS.map(wd=>fareCell(r["w"+wd], r.w7)).join("")}`;
+    tr.onclick=()=>openModal(r, firstDepart(r), "out");
     tb.appendChild(tr);
   });
   [...$("#watchTable thead tr").children].forEach(th=>{
@@ -804,7 +798,7 @@ function renderDrill(d){
   $("#drillCard").style.display="";
   $("#drillTitle").textContent = `${d.continent} — route detail`;
   $("#drillSub").textContent =
-    `one-way ${d.direction==="out"?"from":"to"} Hong Kong · exact departures +7/+14/+30 d · ` +
+    `one-way ${d.direction==="out"?"from":"to"} Hong Kong · exact departures +7 … +90 d · ` +
     `collected ${d.collected_date} · click a route for its booking curves`;
   const regions=[...new Set(state.drillRows.map(r=>r.region))];
   const chips=$("#regionChips"); chips.innerHTML="";
@@ -836,33 +830,18 @@ function renderDrillTable(){
   const tb=$("#drillTable tbody"); tb.innerHTML="";
   let rows=state.drillRows.filter(r=>!state.regionFilter || r.region===state.regionFilter);
   const k=state.sortKey;
-  const val=r=>{
-    const m={p7:["w7","price"],p14:["w14","price"],p30:["w30","price"],
-             c7:["w7","d1_pct"],c14:["w14","d1_pct"],c30:["w30","d1_pct"]}[k];
-    return m ? (r[m[0]]?.[m[1]] ?? null) : r[k];
-  };
   rows=[...rows].sort((a,b)=>{
-    const va=val(a), vb=val(b);
+    const va=windowSortVal(a,k), vb=windowSortVal(b,k);
     if(va==null) return 1; if(vb==null) return -1;
     if(typeof va==="string"){ const c=va.localeCompare(vb); return state.sortAsc?c:-c; }
     return state.sortAsc?va-vb:vb-va;
-  });
-  /* label Δ headers with the real gap to the previous collection */
-  const gap = state.drillData?.prev_gap_days || 1;
-  [...$("#drillTable thead tr").children].forEach(th=>{
-    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)){
-      th.textContent=`Δ ${gap}d / since`;
-      th.title=`Same flight, re-priced: Δ ${gap}d = change vs the previous collection `
-        +`(${gap} day(s) ago) · since = cumulative change since tracking of that departure began. `
-        +`Fills from the second observation day.`;
-    }
   });
   rows.forEach(r=>{
     const tr=document.createElement("tr");
     tr.innerHTML=`<td><b>${r.city}</b> <span style="color:var(--muted)">${r.country}</span></td>
       <td>${r.iata}</td>
-      ${watchCell(r.w7).join("")}${watchCell(r.w14).join("")}${watchCell(r.w30).join("")}`;
-    tr.onclick=()=>openModal(r, r.w7?.depart || r.w14?.depart || r.w30?.depart, state.dir);
+      ${TABLE_WINDOWS.map(wd=>fareCell(r["w"+wd], r.w7)).join("")}`;
+    tr.onclick=()=>openModal(r, firstDepart(r), state.dir);
     tb.appendChild(tr);
   });
 }
@@ -914,7 +893,7 @@ function renderBookingChart(data, t){
   const targets=[];
   if(state.modalFocusDepart && curves[state.modalFocusDepart])
     targets.push(state.modalFocusDepart);
-  if(latestCol) [7,14,30].forEach(w=>{
+  if(latestCol) [7,14,30,60,90].forEach(w=>{
     const want=isoAddDays(latestCol, w);
     let best=null, gap=null;
     keys.forEach(kk=>{
@@ -927,7 +906,7 @@ function renderBookingChart(data, t){
      Google spot-checks plot as detached markers - mixing them into one line
      would draw cross-source price gaps as fake moves (review finding). */
   const series=[];
-  targets.slice(0,4).forEach((dep,i)=>{
+  targets.slice(0,6).forEach((dep,i)=>{
     const cal=curves[dep].filter(o=>o.src==="cal");
     const goog=curves[dep].filter(o=>o.src==="g");
     series.push({
