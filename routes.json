@@ -1,0 +1,582 @@
+{
+ "generated": "2026-08-07",
+ "hub": "HKG",
+ "source": "TOTAL: 82 current passenger airport destinations across 80 cities (Shanghai SHA+PVG and Tokyo HND+NRT each have two airports), excluding the HKG hub. PRIMARY SOURCE: Wikipedia \"List of Cathay Pacific destinations\" fetched 2026-08-07; direct page fetch returned 403 (Wikipedia robot policy), so the MediaWiki API (action=parse) with a descriptive User-Agent was used successfully - 119 table rows pars",
+ "destinations": [
+  {
+   "city": "Beijing",
+   "country": "China",
+   "airport": "Beijing Capital International Airport",
+   "iata": "PEK",
+   "region": "East Asia"
+  },
+  {
+   "city": "Changsha",
+   "country": "China",
+   "airport": "Changsha Huanghua International Airport",
+   "iata": "CSX",
+   "region": "East Asia"
+  },
+  {
+   "city": "Chengdu",
+   "country": "China",
+   "airport": "Chengdu Shuangliu International Airport",
+   "iata": "CTU",
+   "region": "East Asia"
+  },
+  {
+   "city": "Chongqing",
+   "country": "China",
+   "airport": "Chongqing Jiangbei International Airport",
+   "iata": "CKG",
+   "region": "East Asia"
+  },
+  {
+   "city": "Fuzhou",
+   "country": "China",
+   "airport": "Fuzhou Changle International Airport",
+   "iata": "FOC",
+   "region": "East Asia"
+  },
+  {
+   "city": "Guangzhou",
+   "country": "China",
+   "airport": "Guangzhou Baiyun International Airport",
+   "iata": "CAN",
+   "region": "East Asia"
+  },
+  {
+   "city": "Haikou",
+   "country": "China",
+   "airport": "Haikou Meilan International Airport",
+   "iata": "HAK",
+   "region": "East Asia"
+  },
+  {
+   "city": "Hangzhou",
+   "country": "China",
+   "airport": "Hangzhou Xiaoshan International Airport",
+   "iata": "HGH",
+   "region": "East Asia"
+  },
+  {
+   "city": "Nanjing",
+   "country": "China",
+   "airport": "Nanjing Lukou International Airport",
+   "iata": "NKG",
+   "region": "East Asia"
+  },
+  {
+   "city": "Ningbo",
+   "country": "China",
+   "airport": "Ningbo Lishe International Airport",
+   "iata": "NGB",
+   "region": "East Asia"
+  },
+  {
+   "city": "Qingdao",
+   "country": "China",
+   "airport": "Qingdao Jiaodong International Airport",
+   "iata": "TAO",
+   "region": "East Asia"
+  },
+  {
+   "city": "Shanghai",
+   "country": "China",
+   "airport": "Shanghai Hongqiao International Airport",
+   "iata": "SHA",
+   "region": "East Asia"
+  },
+  {
+   "city": "Shanghai",
+   "country": "China",
+   "airport": "Shanghai Pudong International Airport",
+   "iata": "PVG",
+   "region": "East Asia"
+  },
+  {
+   "city": "Urumqi",
+   "country": "China",
+   "airport": "Urumqi Tianshan International Airport",
+   "iata": "URC",
+   "region": "East Asia"
+  },
+  {
+   "city": "Wenzhou",
+   "country": "China",
+   "airport": "Wenzhou Longwan International Airport",
+   "iata": "WNZ",
+   "region": "East Asia"
+  },
+  {
+   "city": "Wuhan",
+   "country": "China",
+   "airport": "Wuhan Tianhe International Airport",
+   "iata": "WUH",
+   "region": "East Asia"
+  },
+  {
+   "city": "Xiamen",
+   "country": "China",
+   "airport": "Xiamen Gaoqi International Airport",
+   "iata": "XMN",
+   "region": "East Asia"
+  },
+  {
+   "city": "Xi'an",
+   "country": "China",
+   "airport": "Xi'an Xianyang International Airport",
+   "iata": "XIY",
+   "region": "East Asia"
+  },
+  {
+   "city": "Zhengzhou",
+   "country": "China",
+   "airport": "Zhengzhou Xinzheng International Airport",
+   "iata": "CGO",
+   "region": "East Asia"
+  },
+  {
+   "city": "Fukuoka",
+   "country": "Japan",
+   "airport": "Fukuoka Airport",
+   "iata": "FUK",
+   "region": "East Asia"
+  },
+  {
+   "city": "Nagoya",
+   "country": "Japan",
+   "airport": "Chubu Centrair International Airport",
+   "iata": "NGO",
+   "region": "East Asia"
+  },
+  {
+   "city": "Osaka",
+   "country": "Japan",
+   "airport": "Kansai International Airport",
+   "iata": "KIX",
+   "region": "East Asia"
+  },
+  {
+   "city": "Sapporo",
+   "country": "Japan",
+   "airport": "New Chitose Airport",
+   "iata": "CTS",
+   "region": "East Asia"
+  },
+  {
+   "city": "Tokyo",
+   "country": "Japan",
+   "airport": "Tokyo Haneda Airport",
+   "iata": "HND",
+   "region": "East Asia"
+  },
+  {
+   "city": "Tokyo",
+   "country": "Japan",
+   "airport": "Narita International Airport",
+   "iata": "NRT",
+   "region": "East Asia"
+  },
+  {
+   "city": "Seoul",
+   "country": "South Korea",
+   "airport": "Incheon International Airport",
+   "iata": "ICN",
+   "region": "East Asia"
+  },
+  {
+   "city": "Kaohsiung",
+   "country": "Taiwan",
+   "airport": "Kaohsiung International Airport",
+   "iata": "KHH",
+   "region": "East Asia"
+  },
+  {
+   "city": "Taipei",
+   "country": "Taiwan",
+   "airport": "Taiwan Taoyuan International Airport",
+   "iata": "TPE",
+   "region": "East Asia"
+  },
+  {
+   "city": "Phnom Penh",
+   "country": "Cambodia",
+   "airport": "Techo International Airport",
+   "iata": "KTI",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Denpasar (Bali)",
+   "country": "Indonesia",
+   "airport": "I Gusti Ngurah Rai International Airport",
+   "iata": "DPS",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Jakarta",
+   "country": "Indonesia",
+   "airport": "Soekarno-Hatta International Airport",
+   "iata": "CGK",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Surabaya",
+   "country": "Indonesia",
+   "airport": "Juanda International Airport",
+   "iata": "SUB",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Kuala Lumpur",
+   "country": "Malaysia",
+   "airport": "Kuala Lumpur International Airport",
+   "iata": "KUL",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Penang",
+   "country": "Malaysia",
+   "airport": "Penang International Airport",
+   "iata": "PEN",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Cebu",
+   "country": "Philippines",
+   "airport": "Mactan-Cebu International Airport",
+   "iata": "CEB",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Manila",
+   "country": "Philippines",
+   "airport": "Ninoy Aquino International Airport",
+   "iata": "MNL",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Singapore",
+   "country": "Singapore",
+   "airport": "Singapore Changi Airport",
+   "iata": "SIN",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Bangkok",
+   "country": "Thailand",
+   "airport": "Suvarnabhumi Airport",
+   "iata": "BKK",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Phuket",
+   "country": "Thailand",
+   "airport": "Phuket International Airport",
+   "iata": "HKT",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Hanoi",
+   "country": "Vietnam",
+   "airport": "Noi Bai International Airport",
+   "iata": "HAN",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Ho Chi Minh City",
+   "country": "Vietnam",
+   "airport": "Tan Son Nhat International Airport",
+   "iata": "SGN",
+   "region": "Southeast Asia"
+  },
+  {
+   "city": "Dhaka",
+   "country": "Bangladesh",
+   "airport": "Hazrat Shahjalal International Airport",
+   "iata": "DAC",
+   "region": "South Asia"
+  },
+  {
+   "city": "Bengaluru",
+   "country": "India",
+   "airport": "Kempegowda International Airport",
+   "iata": "BLR",
+   "region": "South Asia"
+  },
+  {
+   "city": "Chennai",
+   "country": "India",
+   "airport": "Chennai International Airport",
+   "iata": "MAA",
+   "region": "South Asia"
+  },
+  {
+   "city": "Delhi",
+   "country": "India",
+   "airport": "Indira Gandhi International Airport",
+   "iata": "DEL",
+   "region": "South Asia"
+  },
+  {
+   "city": "Hyderabad",
+   "country": "India",
+   "airport": "Rajiv Gandhi International Airport",
+   "iata": "HYD",
+   "region": "South Asia"
+  },
+  {
+   "city": "Mumbai",
+   "country": "India",
+   "airport": "Chhatrapati Shivaji Maharaj International Airport",
+   "iata": "BOM",
+   "region": "South Asia"
+  },
+  {
+   "city": "Kathmandu",
+   "country": "Nepal",
+   "airport": "Tribhuvan International Airport",
+   "iata": "KTM",
+   "region": "South Asia"
+  },
+  {
+   "city": "Colombo",
+   "country": "Sri Lanka",
+   "airport": "Bandaranaike International Airport",
+   "iata": "CMB",
+   "region": "South Asia"
+  },
+  {
+   "city": "Astana",
+   "country": "Kazakhstan",
+   "airport": "Nursultan Nazarbayev International Airport",
+   "iata": "NQZ",
+   "region": "Central Asia"
+  },
+  {
+   "city": "Riyadh",
+   "country": "Saudi Arabia",
+   "airport": "King Khalid International Airport",
+   "iata": "RUH",
+   "region": "Middle East"
+  },
+  {
+   "city": "Dubai",
+   "country": "United Arab Emirates",
+   "airport": "Dubai International Airport",
+   "iata": "DXB",
+   "region": "Middle East"
+  },
+  {
+   "city": "Johannesburg",
+   "country": "South Africa",
+   "airport": "O. R. Tambo International Airport",
+   "iata": "JNB",
+   "region": "Africa"
+  },
+  {
+   "city": "Brussels",
+   "country": "Belgium",
+   "airport": "Brussels Airport",
+   "iata": "BRU",
+   "region": "Europe"
+  },
+  {
+   "city": "Paris",
+   "country": "France",
+   "airport": "Paris Charles de Gaulle Airport",
+   "iata": "CDG",
+   "region": "Europe"
+  },
+  {
+   "city": "Frankfurt",
+   "country": "Germany",
+   "airport": "Frankfurt Airport",
+   "iata": "FRA",
+   "region": "Europe"
+  },
+  {
+   "city": "Munich",
+   "country": "Germany",
+   "airport": "Munich Airport",
+   "iata": "MUC",
+   "region": "Europe"
+  },
+  {
+   "city": "Milan",
+   "country": "Italy",
+   "airport": "Milan Malpensa Airport",
+   "iata": "MXP",
+   "region": "Europe"
+  },
+  {
+   "city": "Rome",
+   "country": "Italy",
+   "airport": "Rome Fiumicino Leonardo da Vinci Airport",
+   "iata": "FCO",
+   "region": "Europe"
+  },
+  {
+   "city": "Amsterdam",
+   "country": "Netherlands",
+   "airport": "Amsterdam Airport Schiphol",
+   "iata": "AMS",
+   "region": "Europe"
+  },
+  {
+   "city": "Barcelona",
+   "country": "Spain",
+   "airport": "Josep Tarradellas Barcelona-El Prat Airport",
+   "iata": "BCN",
+   "region": "Europe"
+  },
+  {
+   "city": "Madrid",
+   "country": "Spain",
+   "airport": "Adolfo Suarez Madrid-Barajas Airport",
+   "iata": "MAD",
+   "region": "Europe"
+  },
+  {
+   "city": "Zurich",
+   "country": "Switzerland",
+   "airport": "Zurich Airport",
+   "iata": "ZRH",
+   "region": "Europe"
+  },
+  {
+   "city": "London",
+   "country": "United Kingdom",
+   "airport": "London Heathrow Airport",
+   "iata": "LHR",
+   "region": "Europe"
+  },
+  {
+   "city": "Manchester",
+   "country": "United Kingdom",
+   "airport": "Manchester Airport",
+   "iata": "MAN",
+   "region": "Europe"
+  },
+  {
+   "city": "Toronto",
+   "country": "Canada",
+   "airport": "Toronto Pearson International Airport",
+   "iata": "YYZ",
+   "region": "North America"
+  },
+  {
+   "city": "Vancouver",
+   "country": "Canada",
+   "airport": "Vancouver International Airport",
+   "iata": "YVR",
+   "region": "North America"
+  },
+  {
+   "city": "Boston",
+   "country": "United States",
+   "airport": "Boston Logan International Airport",
+   "iata": "BOS",
+   "region": "North America"
+  },
+  {
+   "city": "Chicago",
+   "country": "United States",
+   "airport": "O'Hare International Airport",
+   "iata": "ORD",
+   "region": "North America"
+  },
+  {
+   "city": "Dallas",
+   "country": "United States",
+   "airport": "Dallas Fort Worth International Airport",
+   "iata": "DFW",
+   "region": "North America"
+  },
+  {
+   "city": "Los Angeles",
+   "country": "United States",
+   "airport": "Los Angeles International Airport",
+   "iata": "LAX",
+   "region": "North America"
+  },
+  {
+   "city": "New York City",
+   "country": "United States",
+   "airport": "John F. Kennedy International Airport",
+   "iata": "JFK",
+   "region": "North America"
+  },
+  {
+   "city": "San Francisco",
+   "country": "United States",
+   "airport": "San Francisco International Airport",
+   "iata": "SFO",
+   "region": "North America"
+  },
+  {
+   "city": "Seattle",
+   "country": "United States",
+   "airport": "Seattle-Tacoma International Airport",
+   "iata": "SEA",
+   "region": "North America"
+  },
+  {
+   "city": "Adelaide",
+   "country": "Australia",
+   "airport": "Adelaide Airport",
+   "iata": "ADL",
+   "region": "Oceania"
+  },
+  {
+   "city": "Brisbane",
+   "country": "Australia",
+   "airport": "Brisbane Airport",
+   "iata": "BNE",
+   "region": "Oceania"
+  },
+  {
+   "city": "Cairns",
+   "country": "Australia",
+   "airport": "Cairns Airport",
+   "iata": "CNS",
+   "region": "Oceania"
+  },
+  {
+   "city": "Melbourne",
+   "country": "Australia",
+   "airport": "Melbourne Airport",
+   "iata": "MEL",
+   "region": "Oceania"
+  },
+  {
+   "city": "Perth",
+   "country": "Australia",
+   "airport": "Perth Airport",
+   "iata": "PER",
+   "region": "Oceania"
+  },
+  {
+   "city": "Sydney",
+   "country": "Australia",
+   "airport": "Sydney Kingsford Smith Airport",
+   "iata": "SYD",
+   "region": "Oceania"
+  },
+  {
+   "city": "Auckland",
+   "country": "New Zealand",
+   "airport": "Auckland Airport",
+   "iata": "AKL",
+   "region": "Oceania"
+  },
+  {
+   "city": "Christchurch",
+   "country": "New Zealand",
+   "airport": "Christchurch Airport",
+   "iata": "CHC",
+   "region": "Oceania"
+  }
+ ],
+ "fifth_freedom_routes": []
+}

@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cathay Fare Monitor</title>
+<script src="echarts.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page:#f7f1e7; --surface:#fffdf8; --surface-2:#fbf6ec;
+  --ink:#1c1814; --ink-2:#5a5244; --muted:#8d8474;
+  --grid:#e9e1d2; --axis:#cfc5b2; --border:rgba(28,24,20,0.14);
+  --rule:#1c1814;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300;
+  --down:#00631f; --downbg:rgba(0,99,31,.08);
+  --up:#b3261e; --upbg:rgba(179,38,30,.07);
+  --accent:#1f4e79;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:#141210; --surface:#1d1a16; --surface-2:#242019;
+  --ink:#f2ecdf; --ink-2:#c9c1af; --muted:#8d8474;
+  --grid:#332e26; --axis:#4a443a; --border:rgba(242,236,223,0.14);
+  --rule:#f2ecdf;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#2aa32a;
+  --down:#3fae5c; --downbg:rgba(63,174,92,.12);
+  --up:#e66767; --upbg:rgba(230,103,103,.10);
+  --accent:#6ba3d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page:#141210; --surface:#1d1a16; --surface-2:#242019;
+    --ink:#f2ecdf; --ink-2:#c9c1af; --muted:#8d8474;
+    --grid:#332e26; --axis:#4a443a; --border:rgba(242,236,223,0.14);
+    --rule:#f2ecdf;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#2aa32a;
+    --down:#3fae5c; --downbg:rgba(63,174,92,.12);
+    --up:#e66767; --upbg:rgba(230,103,103,.10);
+    --accent:#6ba3d6;
+  }
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--page); color:var(--ink);
+  font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+.serif { font-family:Georgia,"Times New Roman",serif; }
+.wrap { max-width:1200px; margin:0 auto; padding:26px 28px 70px; }
+.masthead { border-top:3px solid var(--rule); border-bottom:1px solid var(--rule); padding:14px 2px 12px; }
+.masthead-row { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 18px; }
+h1 { font-family:Georgia,serif; font-size:30px; margin:0; font-weight:600; letter-spacing:.2px; }
+h1 .zh { font-size:14px; color:var(--ink-2); font-weight:400; margin-left:10px; letter-spacing:1px; }
+.dateline {
+  display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center;
+  border-bottom:1px solid var(--grid); padding:8px 2px; margin-bottom:18px;
+  font-size:12px; color:var(--ink-2);
+}
+.dateline b { color:var(--ink); font-weight:600; }
+.microlabel { font-size:10.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.spacer { flex:1; }
+.controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:0 0 20px; }
+.seg { display:inline-flex; border:1px solid var(--border); border-radius:3px; overflow:hidden; background:var(--surface); }
+.seg button {
+  border:0; background:transparent; color:var(--ink-2); padding:6px 13px;
+  font:inherit; font-size:12px; letter-spacing:.6px; text-transform:uppercase; cursor:pointer;
+}
+.seg button.on { background:var(--ink); color:var(--page); }
+.btn {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink);
+  border-radius:3px; padding:6px 14px; font:inherit; font-size:12.5px; cursor:pointer;
+}
+.btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn:disabled { opacity:.55; cursor:default; }
+.err-banner { background:var(--upbg); border:1px solid var(--up); color:var(--ink); border-radius:3px;
+  padding:10px 14px; margin-bottom:14px; font-size:13px; display:none; }
+.progress-wrap { display:none; align-items:center; gap:10px; flex-basis:100%; }
+.progress-wrap.show { display:flex; }
+.bar { flex:1; height:6px; border-radius:3px; background:var(--grid); overflow:hidden; }
+.bar i { display:block; height:100%; background:var(--accent); width:0%; transition:width .5s; }
+.progress-txt { font-size:12px; color:var(--ink-2); white-space:nowrap; }
+
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:0;
+  border:1px solid var(--border); background:var(--surface); border-radius:4px; margin-bottom:22px; }
+.kpi { padding:14px 18px 12px; border-right:1px solid var(--grid); }
+.kpi:last-child { border-right:0; }
+.kpi .v { font-family:Georgia,serif; font-size:27px; font-weight:600; margin:3px 0 1px; }
+.kpi .v small { font-size:13px; color:var(--muted); font-weight:400; font-family:system-ui,sans-serif; }
+.kpi .d { font-size:12px; color:var(--muted); }
+.delta-down { color:var(--down); font-weight:600; }
+.delta-up { color:var(--up); font-weight:600; }
+.section { margin-bottom:26px; }
+.section-head { display:flex; align-items:baseline; gap:12px; border-bottom:2px solid var(--rule);
+  padding-bottom:5px; margin-bottom:12px; }
+.section-head h2 { font-family:Georgia,serif; font-size:18px; margin:0; font-weight:600; }
+.section-head .note { font-size:12px; color:var(--muted); }
+#indexChart { width:100%; height:320px; }
+.pending {
+  background:var(--surface-2); border:1px dashed var(--border); border-radius:4px;
+  color:var(--ink-2); font-size:13px; padding:14px 18px; margin-top:6px;
+}
+.board { display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:12px; }
+.ccard {
+  background:var(--surface); border:1px solid var(--border); border-radius:4px;
+  padding:12px 15px 10px; cursor:pointer; transition:box-shadow .15s, border-color .15s;
+  position:relative;
+}
+.ccard:hover { border-color:var(--accent); }
+.ccard.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+.ccard .dot { position:absolute; top:14px; right:14px; width:9px; height:9px; border-radius:50%; }
+.ccard .name { font-family:Georgia,serif; font-size:16px; font-weight:600; }
+.ccard .n { font-size:11px; color:var(--muted); margin-bottom:4px; }
+.ccard .v { font-family:Georgia,serif; font-size:24px; font-weight:600; }
+.ccard .v small { font-size:11px; color:var(--muted); font-family:system-ui,sans-serif; font-weight:400; }
+.ccard .chg { font-size:12px; margin:2px 0 6px; color:var(--muted); }
+.ccard svg { display:block; width:100%; height:30px; }
+.ccard .range { font-size:11px; color:var(--muted); margin-top:4px; }
+.movers { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+@media (max-width:760px){ .movers { grid-template-columns:1fr; } }
+.mover-panel { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:12px 16px; }
+.mover-panel h3 { margin:0 0 8px; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; font-weight:700; }
+.mover-panel h3.down { color:var(--down); } .mover-panel h3.up { color:var(--up); }
+.mover-row { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-bottom:1px solid var(--grid);
+  font-variant-numeric:tabular-nums; cursor:pointer; }
+.mover-row:last-child { border-bottom:0; }
+.mover-row:hover { background:var(--surface-2); }
+.mover-row .route { flex:1; }
+.mover-row .route b { font-weight:600; }
+.mover-row .route small { color:var(--muted); }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; background:var(--surface); }
+th, td { text-align:right; padding:8px 12px; border-bottom:1px solid var(--grid); font-size:13px; }
+th { color:var(--muted); font-weight:700; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase;
+  cursor:pointer; user-select:none; white-space:nowrap; border-bottom:1px solid var(--axis); }
+th:first-child, td:first-child { text-align:left; }
+tbody tr { cursor:pointer; }
+tbody tr:hover { background:var(--surface-2); }
+td .src { font-size:10px; color:var(--muted); margin-left:4px; }
+td.na { color:var(--muted); }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 12px; }
+.chip { border:1px solid var(--border); background:transparent; color:var(--ink-2);
+  border-radius:999px; padding:3px 12px; font:inherit; font-size:12px; cursor:pointer; }
+.chip.on { background:var(--ink); border-color:var(--ink); color:var(--page); }
+.modal-back {
+  display:none; position:fixed; inset:0; background:rgba(20,16,10,.5); z-index:40;
+  align-items:flex-start; justify-content:center; padding:4vh 16px; overflow:auto;
+}
+.modal-back.show { display:flex; }
+.modal {
+  background:var(--surface); border:1px solid var(--border); border-radius:6px;
+  width:min(900px,100%); padding:20px 26px;
+}
+.modal h3 { margin:0; font-family:Georgia,serif; font-size:21px; font-weight:600; }
+.modal .sub { color:var(--muted); font-size:12px; margin:2px 0 10px; }
+.modal-head { display:flex; align-items:flex-start; gap:12px; }
+.modal-head .x { margin-left:auto; }
+.modal h4 { font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted);
+  margin:14px 0 2px; border-bottom:1px solid var(--grid); padding-bottom:4px; }
+#histChart, #curveChart { width:100%; height:265px; }
+.empty { text-align:center; color:var(--ink-2); padding:60px 20px; font-size:15px;
+  background:var(--surface); border:1px solid var(--border); border-radius:4px; }
+.footer-note { color:var(--muted); font-size:11.5px; margin-top:26px; line-height:1.6;
+  border-top:1px solid var(--grid); padding-top:10px; }
+.footer-note a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <div class="masthead-row">
+      <h1>Cathay Fare Monitor<span class="zh">国泰航空全航线票价追踪</span></h1>
+      <span class="spacer"></span>
+      <span class="microlabel">All fares USD · taxes incl. · lowest CX economy</span>
+      <button class="btn" id="themeBtn" title="Toggle light/dark">◐</button>
+    </div>
+  </div>
+  <div class="dateline" id="metaLine">Loading…</div>
+
+  <div class="err-banner" id="errBanner"></div>
+
+  <div class="controls">
+    <span class="microlabel">Direction</span>
+    <div class="seg" id="dirSeg">
+      <button data-dir="out" class="on">From HKG</button>
+      <button data-dir="in">To HKG</button>
+    </div>
+    <span class="microlabel">Departure</span>
+    <div class="seg" id="horizonSeg"></div>
+    <span class="spacer"></span>
+    <button class="btn primary" id="refreshBtn">⟳ Refresh data</button>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="bar"><i id="progressBar"></i></div>
+      <span class="progress-txt" id="progressTxt"></span>
+    </div>
+  </div>
+
+  <div id="emptyState" class="empty" style="display:none">
+    No fare data collected yet.<br><br>
+    <button class="btn primary" onclick="startRefresh()">Run the first collection</button>
+  </div>
+
+  <div id="mainView" style="display:none">
+    <div class="kpis" id="kpiStrip"></div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Continental fare index</h2>
+        <span class="note" id="indexNote">average lowest CX fare by continent, per collection day</span>
+      </div>
+      <div id="indexChart"></div>
+      <div class="pending" id="indexPending" style="display:none"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>The board</h2>
+        <span class="note" id="boardNote"></span>
+      </div>
+      <div class="board" id="continentBoard"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Movers</h2>
+        <span class="note">largest day-over-day changes · <span class="delta-down">green = getting cheaper</span></span>
+      </div>
+      <div class="movers" id="moversWrap"></div>
+      <div class="pending" id="moversPending" style="display:none"></div>
+    </div>
+
+    <div class="section" id="drillCard" style="display:none">
+      <div class="section-head">
+        <h2 id="drillTitle"></h2>
+        <span class="note" id="drillSub"></span>
+      </div>
+      <div class="chips" id="regionChips"></div>
+      <div style="overflow-x:auto"><table id="drillTable">
+        <thead><tr>
+          <th data-k="city">Destination</th><th data-k="iata">Code</th>
+          <th data-k="out_price">From HKG</th><th data-k="in_price">To HKG</th>
+          <th data-k="delta">Δ day</th><th data-k="pct">Δ %</th>
+          <th data-k="official_rt">Official RT*</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="footer-note" style="border:0;margin-top:8px;padding-top:0">
+      * Official lowest cached round-trip from Cathay Pacific's own booking API
+      (dates float to the cheapest pair; converted from HKD at the day's rate).
+      Δ follows the selected direction. <b>cal</b>-tagged fares come from
+      Cathay's official per-day calendar where Google Flights lists no priced
+      CX itinerary.</p>
+    </div>
+  </div>
+
+  <p class="footer-note">
+    Coverage: the complete current Cathay Pacific passenger network — every CX route
+    touches the HKG hub (82 destinations, 164 directional routes; no fifth-freedom
+    sectors operate as of Aug 2026, and e.g. Africa genuinely has a single CX route,
+    Johannesburg). Sources: Google Flights (systematic series, USD) + Cathay Pacific
+    official instant-search API (HKD, converted daily). API:
+    <a href="/api/meta">/api/meta</a> · <a href="/api/summary?horizon=30&direction=out">/api/summary</a> ·
+    <a href="/api/trends?horizon=30&direction=out">/api/trends</a> ·
+    <a href="/api/movers?horizon=30&direction=out">/api/movers</a> ·
+    /api/continent/{name} · /api/route/{orig}/{dest} · POST /api/refresh
+  </p>
+</div>
+
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h3 id="modalTitle"></h3>
+        <p class="sub" id="modalSub"></p>
+      </div>
+      <div class="seg x" id="modalDirSeg">
+        <button data-dir="out" class="on">HKG →</button>
+        <button data-dir="in">→ HKG</button>
+      </div>
+      <button class="btn" onclick="closeModal()">✕</button>
+    </div>
+    <h4>Collected fare history — lowest CX one-way at each booking horizon</h4>
+    <div id="histChart"></div>
+    <h4>Forward fare curve — price vs departure date</h4>
+    <div id="curveChart"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const CONT_COLOR_SLOT = { "Africa":"--s1","Americas":"--s2","Asia":"--s3",
+                          "Australia":"--s4","Europe":"--s5","Middle East":"--s6" };
+const state = {
+  dir:"out", horizon:30, meta:null, summary:null, trends:null, movers:null,
+  drillContinent:null, drillRows:[], regionFilter:null,
+  sortKey:"out_price", sortAsc:true,
+  modalRoute:null, modalDir:"out", modalCache:{},
+  charts:{}, polling:null, pollFails:0,
+};
+const fmt = v => v==null ? "—" : "$" + Math.round(v).toLocaleString("en-US");
+const fmtD = v => (v>0?"+$":"−$") + Math.abs(Math.round(v)).toLocaleString("en-US");
+const cssv = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const contColor = name => cssv(CONT_COLOR_SLOT[name] || "--s1");
+
+const STATIC = !!window.STATIC_MODE;   /* GitHub Pages build: fetch pre-computed JSON files */
+function staticFile(path){
+  const u = new URL(path, location.href);
+  const p = u.pathname.replace(/^.*\/api\//, "/api/"), q = u.searchParams;
+  const h = q.get("horizon"), d = q.get("direction");
+  if(p === "/api/meta") return "api/meta.json";
+  if(p === "/api/summary") return `api/summary-${h}-${d}.json`;
+  if(p === "/api/trends") return `api/trends-${h}-${d}.json`;
+  if(p === "/api/movers") return `api/movers-${h}-${d}.json`;
+  if(p === "/api/refresh/status") return "api/refresh-status.json";
+  let m = p.match(/^\/api\/continent\/([^/]+)$/);
+  if(m) return `api/continent-${decodeURIComponent(m[1]).replace(/ /g,"_")}-${h}.json`;
+  m = p.match(/^\/api\/route\/([A-Z]{3})\/([A-Z]{3})$/);
+  if(m) return `api/route-${m[1]}-${m[2]}.json`;
+  return path;
+}
+async function api(path){
+  const target = STATIC ? staticFile(path) : path;
+  const r = await fetch(target);
+  if(!r.ok && r.status!==409) throw new Error(`${target} → HTTP ${r.status}`);
+  return r.json();
+}
+function showErr(msg){ const b=$("#errBanner"); b.textContent=msg; b.style.display="block"; }
+function clearErr(){ $("#errBanner").style.display="none"; }
+function deltaSpan(delta, pct){
+  if(delta==null) return '<span style="color:var(--muted)">—</span>';
+  if(Math.abs(delta)<1) return '<span style="color:var(--muted)">unch.</span>';
+  const cls = delta<0 ? "delta-down" : "delta-up";
+  const arrow = delta<0 ? "▼" : "▲";
+  return `<span class="${cls}">${arrow} ${fmtD(delta)}${pct!=null?` (${pct>0?"+":""}${pct.toFixed(1)}%)`:""}</span>`;
+}
+
+/* ---------- theme ---------- */
+$("#themeBtn").onclick = () => {
+  const root=document.documentElement;
+  const dark = getComputedStyle(root).colorScheme.includes("dark");
+  root.dataset.theme = dark ? "light" : "dark";
+  renderAll();
+};
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+
+/* ---------- controls ---------- */
+function reloadView(){
+  return Promise.all([loadSummary(), loadTrends(), loadMovers()])
+    .then(()=>{ if(state.drillContinent) return loadDrill(state.drillContinent); })
+    .then(clearErr)
+    .catch(e=>showErr("Failed to load data: "+e.message));
+}
+$("#dirSeg").addEventListener("click", e=>{
+  if(!e.target.dataset.dir) return;
+  state.dir = e.target.dataset.dir;
+  [...$("#dirSeg").children].forEach(b=>b.classList.toggle("on", b===e.target));
+  reloadView();
+});
+function buildHorizonSeg(horizons){
+  const seg=$("#horizonSeg"); seg.innerHTML="";
+  horizons.forEach(h=>{
+    const b=document.createElement("button");
+    b.textContent=`+${h}d`; b.dataset.h=h;
+    if(h===state.horizon) b.classList.add("on");
+    b.onclick=()=>{ state.horizon=h;
+      [...seg.children].forEach(x=>x.classList.toggle("on",x===b));
+      reloadView();
+    };
+    seg.appendChild(b);
+  });
+}
+
+/* ---------- data loads ---------- */
+async function loadMeta(){
+  state.meta = await api("/api/meta");
+  const m = state.meta;
+  if(!Array.isArray(m.horizons) || !m.horizons.length){ m.horizons=[7,30,60,90]; }
+  if(!m.horizons.includes(state.horizon)) state.horizon = m.horizons[0];
+  buildHorizonSeg(m.horizons);
+  const last = m.dates?.[0];
+  const lr = m.last_run || {};
+  const health =
+    (lr.errors ? ` · <span class="delta-up">${lr.errors} failed queries last run</span>` : "") +
+    (lr.degraded ? ` · <span class="delta-up">⚠ last run degraded</span>` : "");
+  $("#metaLine").innerHTML = last
+    ? `<span><b>HKG</b> hub · <b>${m.destinations}</b> destinations · <b>${m.directional_routes||m.destinations*2}</b> directional routes (full CX network)</span>` +
+      `<span>latest collection <b>${last}</b>${lr.finished_ts?` at ${lr.finished_ts.slice(11,16)}`:""}</span>` +
+      `<span>${m.dates.length} collection day(s) · ${m.total_rows.toLocaleString()} records${health}</span>` +
+      (STATIC ? `<span class="microlabel">daily snapshot · refreshed each morning after the 07:30 HKT collection</span>` : "")
+    : `<span><b>HKG</b> hub · <b>${m.destinations}</b> destinations · no data collected yet</span>`;
+  $("#emptyState").style.display = last ? "none" : "block";
+  $("#mainView").style.display = last ? "" : "none";
+}
+async function loadSummary(){
+  state.summary = await api(`/api/summary?horizon=${state.horizon}&direction=${state.dir}`);
+  renderKpis(); renderBoard();
+}
+async function loadTrends(){
+  try{ state.trends = await api(`/api/trends?horizon=${state.horizon}&direction=${state.dir}`); }
+  catch(e){ state.trends = null; }
+  renderIndexChart(); renderBoard(); renderKpis();
+}
+async function loadMovers(){
+  try{ state.movers = await api(`/api/movers?horizon=${state.horizon}&direction=${state.dir}&limit=8`); }
+  catch(e){ state.movers = null; }
+  renderMovers();
+}
+async function loadDrill(name){
+  const d = await api(`/api/continent/${encodeURIComponent(name)}?horizon=${state.horizon}`);
+  state.drillContinent = name;
+  state.drillRows = d.rows; state.regionFilter=null;
+  renderDrill(d);
+  $("#drillCard").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+function openDrill(name){
+  loadDrill(name).then(clearErr).catch(e=>showErr("Failed to load "+name+": "+e.message));
+}
+
+/* ---------- charts common ---------- */
+function chartTheme(){
+  return {
+    ink:cssv("--ink"), ink2:cssv("--ink-2"), muted:cssv("--muted"),
+    grid:cssv("--grid"), axis:cssv("--axis"), surface:cssv("--surface"),
+    s:[cssv("--s1"),cssv("--s2"),cssv("--s3"),cssv("--s4"),cssv("--s5"),cssv("--s6")],
+  };
+}
+function mkChart(id){
+  const el=document.getElementById(id);
+  if(state.charts[id]) state.charts[id].dispose();
+  state.charts[id]=echarts.init(el, null, {renderer:"canvas"});
+  return state.charts[id];
+}
+
+/* ---------- KPI strip ---------- */
+function renderKpis(){
+  const s=state.summary; if(!s||s.empty) return;
+  const t=state.trends;
+  const allRows=[];
+  // cheapest / priciest route come from the continent detail cached in drill?
+  // use summary min/max across continents instead
+  let mn=null, mx=null, mnC="", mxC="";
+  s.continents.forEach(c=>{
+    if(c.min!=null && (mn==null||c.min<mn)){ mn=c.min; mnC=c.name; }
+    if(c.max!=null && (mx==null||c.max>mx)){ mx=c.max; mxC=c.name; }
+  });
+  const priced=s.continents.reduce((a,c)=>a+c.routes_priced,0);
+  const total=s.continents.reduce((a,c)=>a+c.routes_total,0);
+  const ov = t?.overall||[];
+  const nowAvg = ov.length ? ov[ov.length-1].avg : null;
+  const prevAvg = ov.length>1 ? ov[ov.length-2].avg : null;
+  const chg = (nowAvg!=null&&prevAvg!=null) ? nowAvg-prevAvg : null;
+  const pct = chg!=null&&prevAvg ? 100*chg/prevAvg : null;
+  $("#kpiStrip").innerHTML = `
+    <div class="kpi"><div class="microlabel">Network average</div>
+      <div class="v serif">${fmt(nowAvg)}</div>
+      <div class="d">${chg!=null?deltaSpan(chg,pct):"vs yesterday: available after day 2"}</div></div>
+    <div class="kpi"><div class="microlabel">Cheapest route fare</div>
+      <div class="v serif">${fmt(mn)}</div><div class="d">${mnC}</div></div>
+    <div class="kpi"><div class="microlabel">Priciest route fare</div>
+      <div class="v serif">${fmt(mx)}</div><div class="d">${mxC}</div></div>
+    <div class="kpi"><div class="microlabel">Routes priced</div>
+      <div class="v serif">${priced}<small> / ${total}</small></div>
+      <div class="d">${state.dir==="out"?"outbound":"inbound"} · +${state.horizon} d departure</div></div>`;
+}
+
+/* ---------- fare index chart ---------- */
+function renderIndexChart(){
+  const t=chartTheme();
+  const tr=state.trends;
+  const el=$("#indexPending");
+  if(!tr || !tr.dates || !tr.dates.length){ el.style.display="block";
+    el.textContent="Fare-index history is unavailable (endpoint not reachable)."; return; }
+  if(tr.dates.length<2){
+    el.style.display="block";
+    el.textContent=`The index line begins with the second collection day — tomorrow's 07:30 run. Today (${tr.dates[0]}) is the baseline.`;
+  } else el.style.display="none";
+  const c=mkChart("indexChart");
+  const names=Object.keys(tr.continents).sort();
+  const series=names.map(name=>({
+    name, type:"line", symbolSize:7, lineStyle:{width:2},
+    itemStyle:{color:contColor(name)}, connectNulls:true,
+    endLabel: tr.dates.length>1 ? {show:true, formatter:name, color:t.ink2, fontSize:11,
+      distance:6} : {show:false},
+    data:tr.dates.map(d=>{
+      const pt=tr.continents[name].find(x=>x.date===d);
+      return pt?pt.avg:null;
+    }),
+  }));
+  c.setOption({
+    textStyle:{fontFamily:'system-ui,-apple-system,"Segoe UI",sans-serif'},
+    grid:{left:8,right:90,top:28,bottom:8,containLabel:true},
+    legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
+    tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
+      textStyle:{color:t.ink, fontSize:12}, valueFormatter:v=>fmt(v)},
+    xAxis:{type:"category", data:tr.dates, axisLabel:{color:t.muted, fontSize:11},
+      axisLine:{lineStyle:{color:t.axis}}, axisTick:{show:false}},
+    yAxis:{type:"value", scale:true,
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>"$"+v.toLocaleString()},
+      splitLine:{lineStyle:{color:t.grid}}},
+    series,
+  });
+}
+
+/* ---------- continent board ---------- */
+function sparkSvg(pts, color){
+  if(!pts || !pts.length) return "";
+  const w=150, h=30, pad=3;
+  const vals=pts.map(p=>p.avg);
+  const mn=Math.min(...vals), mx=Math.max(...vals);
+  const x=i => pts.length===1 ? w/2 : pad + i*(w-2*pad)/(pts.length-1);
+  const y=v => mx===mn ? h/2 : h-pad-((v-mn)*(h-2*pad)/(mx-mn));
+  if(pts.length===1)
+    return `<svg viewBox="0 0 ${w} ${h}"><circle cx="${w/2}" cy="${h/2}" r="3" fill="${color}"/></svg>`;
+  const path=vals.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last=vals.length-1;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="1.8"/>
+    <circle cx="${x(last).toFixed(1)}" cy="${y(vals[last]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
+}
+function renderBoard(){
+  const s=state.summary; if(!s||s.empty) return;
+  $("#boardNote").textContent =
+    `lowest CX one-way ${s.direction==="out"?"from":"to"} Hong Kong, departing +${s.horizon} days · ${s.collected_date}`;
+  const board=$("#continentBoard"); board.innerHTML="";
+  s.continents.forEach(r=>{
+    const color=contColor(r.name);
+    const pts=state.trends?.continents?.[r.name]||[];
+    const chg = r.trend_delta!=null
+      ? deltaSpan(r.trend_delta, r.prev_avg?100*r.trend_delta/r.prev_avg:null)
+      : '<span style="color:var(--muted)">Δ from day 2</span>';
+    const d=document.createElement("div");
+    d.className="ccard"+(state.drillContinent===r.name?" on":"");
+    d.innerHTML=`<span class="dot" style="background:${color}"></span>
+      <div class="name serif">${r.name}</div>
+      <div class="n">${r.routes_priced}/${r.routes_total} routes priced</div>
+      <div class="v serif">${fmt(r.avg)}<small> avg</small></div>
+      <div class="chg">${chg}</div>
+      ${sparkSvg(pts, color)}
+      <div class="range">range ${fmt(r.min)} – ${fmt(r.max)}</div>`;
+    d.onclick=()=>openDrill(r.name);
+    board.appendChild(d);
+  });
+}
+
+/* ---------- movers ---------- */
+function renderMovers(){
+  const m=state.movers, wrap=$("#moversWrap"), pend=$("#moversPending");
+  wrap.innerHTML="";
+  if(!m){ pend.style.display="block";
+    pend.textContent="Movers are unavailable (endpoint not reachable)."; return; }
+  if(!m.available){ pend.style.display="block";
+    pend.textContent="Movers appear once there are two collection days to compare — after tomorrow's 07:30 run.";
+    return; }
+  pend.style.display="none";
+  const dirLabel = state.dir==="out" ? "HKG→" : "→HKG";
+  const panel=(title, cls, rows, emptyTxt)=>{
+    const rowsHtml = rows.length ? rows.map(r=>`
+      <div class="mover-row" data-iata="${r.iata}">
+        <span class="route"><b>${dirLabel}${r.iata}</b> <small>${r.city}, ${r.continent}</small></span>
+        <span>${fmt(r.price)}</span>
+        <span>${deltaSpan(r.delta, r.pct)}</span>
+      </div>`).join("") : `<div style="color:var(--muted);font-size:12.5px;padding:6px 0">${emptyTxt}</div>`;
+    return `<div class="mover-panel"><h3 class="${cls}">${title}</h3>${rowsHtml}</div>`;
+  };
+  wrap.innerHTML =
+    panel("Fares falling", "down", m.fallers, "no routes fell today") +
+    panel("Fares rising", "up", m.risers, "no routes rose today");
+  wrap.querySelectorAll(".mover-row").forEach(el=>{
+    el.onclick=()=>{
+      const iata=el.dataset.iata;
+      const meta=(state.meta.routes||[]).find(r=>r.iata===iata);
+      if(meta) openModal({iata, city:meta.city, airport:meta.airport, region:meta.region,
+                          official_rt:null});
+    };
+  });
+}
+
+/* ---------- drilldown ---------- */
+function renderDrill(d){
+  $("#drillCard").style.display="";
+  $("#drillTitle").textContent = `${d.continent} — route detail`;
+  $("#drillSub").textContent =
+    `departure +${d.horizon} d · collected ${d.collected_date} · click a route for its history`;
+  const regions=[...new Set(state.drillRows.map(r=>r.region))];
+  const chips=$("#regionChips"); chips.innerHTML="";
+  if(regions.length>1){
+    const mk=(label, filter)=>{
+      const b=document.createElement("button");
+      b.className="chip"+(filter===state.regionFilter?" on":"");
+      b.textContent=label;
+      b.onclick=()=>{ state.regionFilter=filter; renderDrillTable();
+        [...chips.children].forEach(c=>c.classList.toggle("on",c===b)); };
+      chips.appendChild(b);
+    };
+    mk("All regions", null);
+    chips.children[0].classList.add("on");
+    regions.forEach(rg=>mk(rg, rg));
+  }
+  renderDrillTable();
+  [...$("#drillTable thead tr").children].forEach(th=>{
+    th.onclick=()=>{
+      const k=th.dataset.k;
+      state.sortAsc = state.sortKey===k ? !state.sortAsc : true;
+      state.sortKey=k; renderDrillTable();
+    };
+  });
+  document.querySelectorAll(".ccard").forEach(c=>
+    c.classList.toggle("on", c.querySelector(".name")?.textContent===d.continent));
+}
+function rowDelta(r){
+  const now = state.dir==="out" ? r.out_price : r.in_price;
+  const prev = state.dir==="out" ? r.prev_out_price : r.prev_in_price;
+  if(now==null || prev==null) return [null, null];
+  return [now-prev, prev?100*(now-prev)/prev:null];
+}
+function renderDrillTable(){
+  const tb=$("#drillTable tbody"); tb.innerHTML="";
+  let rows=state.drillRows.filter(r=>!state.regionFilter || r.region===state.regionFilter);
+  const k=state.sortKey;
+  rows=[...rows].sort((a,b)=>{
+    let va, vb;
+    if(k==="delta"){ va=rowDelta(a)[0]; vb=rowDelta(b)[0]; }
+    else if(k==="pct"){ va=rowDelta(a)[1]; vb=rowDelta(b)[1]; }
+    else { va=a[k]; vb=b[k]; }
+    if(va==null) return 1; if(vb==null) return -1;
+    if(typeof va==="string") return state.sortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return state.sortAsc?va-vb:vb-va;
+  });
+  rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    const src = s => s==="cathay_calendar" ? '<span class="src">cal</span>' : "";
+    const [dl, pc] = rowDelta(r);
+    tr.innerHTML=`<td><b>${r.city}</b> <span style="color:var(--muted)">${r.country}</span></td>
+      <td>${r.iata}</td>
+      <td${r.out_price==null?' class="na"':''}>${fmt(r.out_price)}${src(r.out_src)}</td>
+      <td${r.in_price==null?' class="na"':''}>${fmt(r.in_price)}${src(r.in_src)}</td>
+      <td>${dl==null?'<span style="color:var(--muted)">—</span>':deltaSpan(dl,null)}</td>
+      <td>${pc==null?'<span style="color:var(--muted)">—</span>'
+        :`<span class="${pc<0?"delta-down":"delta-up"}">${pc>0?"+":""}${pc.toFixed(1)}%</span>`}</td>
+      <td${r.official_rt==null?' class="na"':''}>${fmt(r.official_rt)}</td>`;
+    tr.onclick=()=>openModal(r);
+    tb.appendChild(tr);
+  });
+}
+
+/* ---------- route modal ---------- */
+$("#modalDirSeg").addEventListener("click", e=>{
+  if(!e.target.dataset.dir) return;
+  state.modalDir=e.target.dataset.dir;
+  [...$("#modalDirSeg").children].forEach(b=>b.classList.toggle("on",b===e.target));
+  renderModalCharts().catch(e2=>showErr("Failed to load route: "+e2.message));
+});
+$("#modalBack").addEventListener("click", e=>{ if(e.target.id==="modalBack") closeModal(); });
+function closeModal(){ $("#modalBack").classList.remove("show"); state.modalRoute=null; }
+async function openModal(row){
+  state.modalRoute=row; state.modalDir=state.dir;
+  [...$("#modalDirSeg").children].forEach(b=>
+    b.classList.toggle("on", b.dataset.dir===state.modalDir));
+  $("#modalTitle").textContent=`Hong Kong ⇄ ${row.city} (${row.iata})`;
+  $("#modalSub").textContent=`${row.airport||""} · ${row.region||""}` +
+    (row.official_rt ? ` · official lowest round-trip ${fmt(row.official_rt)}` : "");
+  $("#modalBack").classList.add("show");
+  try{ await renderModalCharts(); }
+  catch(e){ showErr("Failed to load route history: "+e.message); }
+}
+async function routeData(dir){
+  const r=state.modalRoute;
+  const key=`${r.iata}:${dir}`;
+  if(!state.modalCache[key]){
+    const [o,d]= dir==="out" ? ["HKG",r.iata] : [r.iata,"HKG"];
+    state.modalCache[key]=await api(`/api/route/${o}/${d}`);
+  }
+  return state.modalCache[key];
+}
+async function renderModalCharts(){
+  if(!state.modalRoute) return;
+  const t=chartTheme();
+  const openedFor=state.modalRoute;
+  const data=await routeData(state.modalDir);
+  if(state.modalRoute!==openedFor) return;
+  const horizons=state.meta.horizons;
+  const dates=[...new Set(data.google_history.map(h=>h.collected_date))].sort();
+  const series=horizons.map((h,i)=>({
+    name:`+${h} d`, type:"line", symbolSize:7, lineStyle:{width:2},
+    itemStyle:{color:t.s[i%6]}, connectNulls:true,
+    data:dates.map(cd=>{
+      const row=data.google_history.find(x=>x.collected_date===cd && x.horizon_days===h);
+      return row?row.price:null;
+    }),
+  }));
+  const hc=mkChart("histChart");
+  hc.setOption({
+    textStyle:{fontFamily:'system-ui,sans-serif'},
+    grid:{left:8,right:16,top:30,bottom:8,containLabel:true},
+    legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
+    tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
+      textStyle:{color:t.ink, fontSize:12}, valueFormatter:v=>fmt(v)},
+    xAxis:{type:"category", data:dates, axisLabel:{color:t.muted, fontSize:11},
+      axisLine:{lineStyle:{color:t.axis}}, axisTick:{show:false}},
+    yAxis:{type:"value", scale:true,
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>"$"+v.toLocaleString()},
+      splitLine:{lineStyle:{color:t.grid}}},
+    series,
+  });
+  const cc=mkChart("curveChart");
+  const calDates=Object.keys(data.calendar||{}).sort().reverse();
+  const curveSeries=[];
+  calDates.forEach((cd,i)=>{
+    curveSeries.push({
+      name:(i===0?"Official calendar ":"Official prev. ")+cd, type:"line",
+      showSymbol:false, lineStyle:{width:2, opacity:i===0?1:.5},
+      itemStyle:{color:t.s[i===0?0:1]},
+      data:data.calendar[cd].filter(x=>x.price!=null).map(x=>[x.depart_date,x.price]),
+    });
+  });
+  if(data.latest_google_points.length){
+    curveSeries.push({
+      name:"Google Flights (CX lowest)", type:"scatter", symbolSize:8,
+      itemStyle:{color:t.s[2]},
+      data:data.latest_google_points.map(x=>[x.depart_date,x.price]),
+    });
+  }
+  cc.setOption({
+    textStyle:{fontFamily:'system-ui,sans-serif'},
+    grid:{left:8,right:16,top:30,bottom:8,containLabel:true},
+    legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
+    tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
+      textStyle:{color:t.ink, fontSize:12},
+      valueFormatter:v=>fmt(Array.isArray(v)?v[1]:v)},
+    xAxis:{type:"time", axisLabel:{color:t.muted, fontSize:11},
+      axisLine:{lineStyle:{color:t.axis}}},
+    yAxis:{type:"value", scale:true,
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>"$"+v.toLocaleString()},
+      splitLine:{lineStyle:{color:t.grid}}},
+    series:curveSeries.length?curveSeries:[{type:"line",data:[]}],
+    graphic: curveSeries.length?[]:[{type:"text", left:"center", top:"middle",
+      style:{text:"No official calendar data for this direction\n(Cathay caches outbound HKG fares only)",
+             fill:t.muted, fontSize:12.5, align:"center"}}],
+  });
+}
+
+/* ---------- refresh ---------- */
+async function startRefresh(){
+  clearErr();
+  try{
+    const r=await fetch("/api/refresh",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({})});
+    await r.json();
+    pollStatus(true);
+  }catch(e){ showErr("Could not start refresh: "+e.message); }
+}
+$("#refreshBtn").onclick=startRefresh;
+async function pollStatus(loop){
+  let st;
+  const wrap=$("#progressWrap"), btn=$("#refreshBtn");
+  try{ st=await api("/api/refresh/status"); state.pollFails=0; }
+  catch(e){
+    state.pollFails=(state.pollFails||0)+1;
+    if(loop && wrap.classList.contains("show") && state.pollFails<20){
+      state.polling=setTimeout(()=>pollStatus(true), 3000);
+    } else {
+      wrap.classList.remove("show"); btn.disabled=false;
+      showErr("API unreachable: "+e.message);
+    }
+    return;
+  }
+  if(st.running){
+    wrap.classList.add("show"); btn.disabled=true;
+    const pct = st.total ? Math.round(100*st.done/st.total) : 0;
+    $("#progressBar").style.width=pct+"%";
+    $("#progressTxt").textContent=
+      `${st.phase||""} ${st.done||0}/${st.total||"?"} (${pct}%) ${st.current||""}` +
+      (st.errors?` · ${st.errors} errors`:"");
+    if(loop) state.polling=setTimeout(()=>pollStatus(true), 3000);
+  } else {
+    const wasRunning = wrap.classList.contains("show");
+    wrap.classList.remove("show"); btn.disabled=false;
+    if(st.phase==="crashed") showErr("Last collection crashed: "+(st.last_error||"unknown"));
+    if(wasRunning){
+      state.modalCache={};
+      try{ await loadMeta(); await reloadView();
+        if(state.modalRoute) await renderModalCharts();
+      }catch(e){ showErr("Reload after refresh failed: "+e.message); }
+    }
+  }
+}
+
+/* ---------- boot ---------- */
+function renderAll(){
+  if(state.summary){ renderKpis(); renderBoard(); }
+  if(state.trends) renderIndexChart();
+  if(state.movers) renderMovers();
+  if(state.drillContinent && state.drillRows.length) renderDrillTable();
+  if(state.modalRoute) renderModalCharts().catch(()=>{});
+}
+addEventListener("resize", ()=>Object.values(state.charts).forEach(c=>c.resize()));
+if(typeof ResizeObserver!=="undefined"){
+  const ro=new ResizeObserver(()=>Object.values(state.charts).forEach(c=>c.resize()));
+  ["indexChart","histChart","curveChart"].forEach(id=>ro.observe(document.getElementById(id)));
+}
+(async function(){
+  if(typeof echarts==="undefined"){
+    showErr("Chart library failed to load. Tables still work; check dashboard/echarts.min.js exists.");
+  }
+  if(STATIC) $("#refreshBtn").style.display = "none";
+  try{
+    await loadMeta();
+    if(state.meta.dates?.length){ await reloadView(); }
+    if(!STATIC) pollStatus(true);
+  }catch(e){ showErr("Failed to load data: "+e.message); }
+})();
+</script>
+</body>
+</html>
