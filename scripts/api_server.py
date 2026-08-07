@@ -236,6 +236,192 @@ def api_movers(conn, qs) -> dict:
             "fallers": fallers, "risers": risers}
 
 
+# --------------------------- same-flight analytics ---------------------------
+# "Same flight" = identical (origin, destination, departure date, one-way,
+# economy). The official calendar re-observes every future departure daily,
+# so each flight accumulates a booking curve of observations.
+
+def _matched_pairs(conn, day_a: str, day_b: str) -> list:
+    """Calendar fares observed on BOTH days for the same flight (outbound)."""
+    return conn.execute(
+        """SELECT a.destination, a.depart_date, a.price AS now_p, b.price AS then_p
+           FROM fares a JOIN fares b
+             ON a.destination=b.destination AND a.depart_date=b.depart_date
+            AND a.origin=b.origin AND a.trip_type=b.trip_type AND a.cabin=b.cabin
+            AND a.source=b.source
+           WHERE a.source='cathay_calendar' AND a.origin='HKG'
+             AND a.collected_date=? AND b.collected_date=?
+             AND a.price IS NOT NULL AND b.price IS NOT NULL""",
+        (day_a, day_b)).fetchall()
+
+
+def _closest_date(dates: list[str], target: str, tolerance_days: int) -> str | None:
+    best, best_gap = None, None
+    tgt = date.fromisoformat(target)
+    for d in dates:
+        gap = abs((date.fromisoformat(d) - tgt).days)
+        if gap <= tolerance_days and (best_gap is None or gap < best_gap):
+            best, best_gap = d, gap
+    return best
+
+
+def api_drift(conn, qs) -> dict:
+    """Matched same-flight fare drift per continent, plus a cumulative index.
+
+    Each continent chains against its own last calendar-bearing collection day
+    (not blindly the previous date): a day whose calendar scrape failed leaves
+    the cursor in place, so the next good day produces a correct multi-day
+    catch-up step instead of silently dropping the move (review finding)."""
+    dates = sorted(collection_dates(conn))[-120:]
+    conts = sorted({m["continent"] for m in DEST_META.values()})
+    drift: dict[str, list] = {}
+    index: dict[str, list] = {c: [] for c in conts}
+    level: dict[str, float] = {c: 100.0 for c in conts}
+    last_good: dict[str, str | None] = {c: None for c in conts}
+    for cur_d in dates:
+        has_cal = {DEST_META[r[0]]["continent"] for r in conn.execute(
+            """SELECT DISTINCT destination FROM fares
+               WHERE collected_date=? AND source='cathay_calendar'
+                 AND origin='HKG' AND price IS NOT NULL""", (cur_d,))
+            if r[0] in DEST_META}
+        pairs_by_base: dict[str, list] = {}
+        for c in conts:
+            base_d = last_good[c]
+            if base_d is None:
+                if c in has_cal:
+                    last_good[c] = cur_d  # index starts (=100) at first calendar day
+                index[c].append({"date": cur_d, "idx": round(level[c], 2)})
+                continue
+            if base_d not in pairs_by_base:
+                pairs_by_base[base_d] = _matched_pairs(conn, cur_d, base_d)
+            pcts = [100 * (p["now_p"] - p["then_p"]) / p["then_p"]
+                    for p in pairs_by_base[base_d]
+                    if p["then_p"] > 0
+                    and DEST_META.get(p["destination"], {}).get("continent") == c]
+            if pcts:
+                pct = sum(pcts) / len(pcts)
+                level[c] *= (1 + pct / 100)
+                drift.setdefault(c, []).append(
+                    {"date": cur_d, "pct": round(pct, 2), "n": len(pcts),
+                     "base": base_d,
+                     "span_days": (date.fromisoformat(cur_d)
+                                   - date.fromisoformat(base_d)).days})
+                last_good[c] = cur_d
+            index[c].append({"date": cur_d, "idx": round(level[c], 2)})
+    return {"dates": dates, "currency": CONFIG["currency"],
+            "note": "matched same-flight pairs (identical route + departure date), outbound HKG official calendar",
+            "drift": drift, "index": index}
+
+
+def api_flight_movers(conn, qs) -> dict:
+    """Biggest same-flight moves: identical (route, departure) priced on the
+    latest collection day and ~window days earlier."""
+    window = int(qs.get("window", ["1"])[0])
+    limit = int(qs.get("limit", ["10"])[0])
+    dates = sorted(collection_dates(conn))
+    if len(dates) < 2:
+        return {"available": False, "reason": "need at least two collection days",
+                "fallers": [], "risers": []}
+    latest = dates[-1]
+    target = (date.fromisoformat(latest) - timedelta(days=window)).isoformat()
+    base = _closest_date(dates[:-1], target, tolerance_days=min(3, max(1, window // 3)))
+    if not base:
+        return {"available": False,
+                "reason": f"no collection ~{window} days back yet (first day was {dates[0]})",
+                "fallers": [], "risers": []}
+    moves = []
+    for p in _matched_pairs(conn, latest, base):
+        meta = DEST_META.get(p["destination"])
+        if not meta or p["then_p"] <= 0:
+            continue
+        delta = p["now_p"] - p["then_p"]
+        moves.append({"iata": p["destination"], "city": meta["city"],
+                      "continent": meta["continent"], "depart_date": p["depart_date"],
+                      "price": p["now_p"], "prev": p["then_p"],
+                      "delta": round(delta, 2),
+                      "pct": round(100 * delta / p["then_p"], 1)})
+    # one representative flight per route: its biggest absolute % move
+    best_per_route: dict[str, dict] = {}
+    for m in moves:
+        cur = best_per_route.get(m["iata"])
+        if cur is None or abs(m["pct"]) > abs(cur["pct"]):
+            best_per_route[m["iata"]] = m
+    ranked = sorted(best_per_route.values(), key=lambda m: m["pct"])
+    return {"available": True, "collected_date": latest, "base_date": base,
+            "window_requested": window,
+            "window_actual": (date.fromisoformat(latest) - date.fromisoformat(base)).days,
+            "flights_compared": len(moves),
+            "fallers": [m for m in ranked if m["pct"] < 0][:limit],
+            "risers": [m for m in ranked if m["pct"] > 0][-limit:][::-1]}
+
+
+def api_departure_watch(conn, qs) -> dict:
+    """For each route: the specific flights departing +7, +14 and +30 days from
+    the latest collection day - today's price for that exact departure, its
+    change since yesterday's observation and since first observation."""
+    windows = [7, 14, 30]
+    dates = sorted(collection_dates(conn))
+    if not dates:
+        return {"windows": windows, "rows": []}
+    latest = dates[-1]
+    latest_d = date.fromisoformat(latest)
+    prev = dates[-2] if len(dates) > 1 else None
+
+    def flight_obs(dest: str, depart: str) -> list:
+        return conn.execute(
+            """SELECT collected_date, price, source FROM fares
+               WHERE origin='HKG' AND destination=? AND depart_date=?
+                 AND trip_type='one-way' AND price IS NOT NULL
+                 AND source IN ('cathay_calendar', 'google_flights')
+               ORDER BY collected_date""", (dest, depart)).fetchall()
+
+    prev_gap_days = ((latest_d - date.fromisoformat(prev)).days if prev else None)
+
+    rows = []
+    for iata, meta in DEST_META.items():
+        cells = {}
+        for w in windows:
+            depart = (latest_d + timedelta(days=w)).isoformat()
+            obs = flight_obs(iata, depart)
+            today_obs = [o for o in obs if o["collected_date"] == latest]
+            if not today_obs:
+                cells[f"w{w}"] = None
+                continue
+            # displayed price: cheapest observation today, correctly attributed
+            cheapest = min(today_obs, key=lambda o: o["price"])
+            price = cheapest["price"]
+            # Deltas compare CALENDAR vs CALENDAR only: the two sources quote
+            # the same flight up to ~290% apart, so a cross-source comparison
+            # would fabricate fare moves (review finding, verified on live DB).
+            cal = [o for o in obs if o["source"] == "cathay_calendar"]
+            def cal_min(day):
+                p = [o["price"] for o in cal if o["collected_date"] == day]
+                return min(p) if p else None
+            cal_today = cal_min(latest)
+            cal_prev = cal_min(prev) if prev else None
+            d1 = (100 * (cal_today - cal_prev) / cal_prev
+                  if cal_today is not None and cal_prev else None)
+            cal_days = sorted({o["collected_date"] for o in cal})
+            first_day = cal_days[0] if cal_days else None
+            base = cal_min(first_day) if first_day else None
+            since = (100 * (cal_today - base) / base
+                     if cal_today is not None and base and first_day != latest else None)
+            cells[f"w{w}"] = {"depart": depart, "price": price,
+                              "src": "cal" if cheapest["source"] == "cathay_calendar" else "g",
+                              "d1_pct": round(d1, 1) if d1 is not None else None,
+                              "since_pct": round(since, 1) if since is not None else None,
+                              "since_date": first_day,
+                              "n_obs": len({o["collected_date"] for o in obs})}
+        if any(cells.values()):
+            rows.append({"iata": iata, "city": meta["city"], "country": meta["country"],
+                         "continent": meta["continent"], "region": meta["region"],
+                         "airport": meta.get("airport"), **cells})
+    rows.sort(key=lambda r: (r["continent"], r["city"]))
+    return {"windows": windows, "collected_date": latest, "prev_date": prev,
+            "prev_gap_days": prev_gap_days,
+            "currency": CONFIG["currency"], "rows": rows}
+
+
 def api_continent(conn, name: str, qs) -> dict:
     horizon = int(qs.get("horizon", ["30"])[0])
     dates = collection_dates(conn)
@@ -307,12 +493,27 @@ def api_route(conn, origin: str, dest: str) -> dict:
                WHERE source='google_flights' AND origin=? AND destination=?
                  AND collected_date=? AND price IS NOT NULL
                ORDER BY depart_date""", (origin, dest, latest[0]))]
+    # booking curves: every observation of each future departure of this route,
+    # so the modal can chart "same flight, price vs days-to-departure"
+    curves: dict[str, list] = {}
+    if latest:
+        cutoff = latest[0]  # only departures still in the future
+        for r in conn.execute(
+            """SELECT depart_date, collected_date, price, source FROM fares
+               WHERE origin=? AND destination=? AND trip_type='one-way'
+                 AND price IS NOT NULL AND depart_date >= ?
+                 AND source IN ('cathay_calendar', 'google_flights')
+               ORDER BY depart_date, collected_date, source""",
+                (origin, dest, cutoff)):
+            curves.setdefault(r["depart_date"], []).append(
+                {"obs": r["collected_date"], "price": r["price"],
+                 "src": "cal" if r["source"] == "cathay_calendar" else "g"})
     other = dest if origin == "HKG" else origin
     meta = DEST_META.get(other, {})
     return {"origin": origin, "destination": dest, "meta": meta,
             "currency": CONFIG["currency"], "google_history": history,
             "official_rt_history": official_rt, "calendar": calendar,
-            "latest_google_points": google_points}
+            "latest_google_points": google_points, "booking_curves": curves}
 
 
 def api_meta(conn) -> dict:
@@ -463,6 +664,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_trends(conn, qs))
             if path == "/api/movers":
                 return self._json(api_movers(conn, qs))
+            if path == "/api/drift":
+                return self._json(api_drift(conn, qs))
+            if path == "/api/flight-movers":
+                return self._json(api_flight_movers(conn, qs))
+            if path == "/api/departure-watch":
+                return self._json(api_departure_watch(conn, qs))
             if path.startswith("/api/continent/"):
                 name = path.split("/api/continent/", 1)[1].replace("%20", " ")
                 return self._json(api_continent(conn, name, qs))

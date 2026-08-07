@@ -1,7 +1,7 @@
 {
   "currency": "USD",
   "cabin": "economy",
-  "horizons_days": [7, 30, 60, 90],
+  "horizons_days": [7, 14, 30, 60, 90],
   "directions": "both",
   "google_flights": {
     "enabled": true,

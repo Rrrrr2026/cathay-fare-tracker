@@ -38,9 +38,16 @@ def main() -> int:
     if not srv.DB_PATH.exists():
         print("no database yet - nothing to export")
         return 1
+    # clean slate so renamed/dropped files do not live on as orphans in git/Pages
+    shutil.rmtree(API, ignore_errors=True)
     conn = srv._db()
     try:
         dump(API / "meta.json", srv.api_meta(conn))
+        dump(API / "drift.json", srv.api_drift(conn, {}))
+        dump(API / "departure-watch.json", srv.api_departure_watch(conn, {}))
+        for w in (1, 7, 14, 30):
+            dump(API / f"flight-movers-{w}.json",
+                 srv.api_flight_movers(conn, {"window": [str(w)], "limit": ["10"]}))
         horizons = srv.CONFIG["horizons_days"]
         continents = sorted({m["continent"] for m in srv.DEST_META.values()})
         n = 1
@@ -49,8 +56,7 @@ def main() -> int:
                 qs = {"horizon": [str(h)], "direction": [d]}
                 dump(API / f"summary-{h}-{d}.json", srv.api_summary(conn, qs))
                 dump(API / f"trends-{h}-{d}.json", srv.api_trends(conn, qs))
-                dump(API / f"movers-{h}-{d}.json", srv.api_movers(conn, qs))
-                n += 3
+                n += 2
             for name in continents:
                 dump(API / f"continent-{name.replace(' ', '_')}-{h}.json",
                      srv.api_continent(conn, name, {"horizon": [str(h)]}))

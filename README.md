@@ -18,6 +18,13 @@ machine. The dashboard (vendored ECharts, stdlib HTTP server) also runs
 entirely locally. Internet is needed only to reach the two fare sources and
 the FX rate.
 
+**Shared online copy**: https://rrrrr2026.github.io/cathay-fare-tracker/ — a
+static export of the same dashboard (public URL, works anytime, no local
+server needed). Each successful collection regenerates `docs/`
+(`scripts/export_static.py`) and pushes, so the site refreshes itself every
+morning. The ⟳ refresh button exists only on the local copy; the online page
+is a read-only daily snapshot.
+
 ## Data sources (verified 2026-08-07)
 
 | Source | What it provides | Coverage |

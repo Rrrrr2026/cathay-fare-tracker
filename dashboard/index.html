@@ -156,7 +156,7 @@ td.na { color:var(--muted); }
 .modal-head .x { margin-left:auto; }
 .modal h4 { font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted);
   margin:14px 0 2px; border-bottom:1px solid var(--grid); padding-bottom:4px; }
-#histChart, #curveChart { width:100%; height:265px; }
+#histChart, #curveChart, #bookingChart { width:100%; height:265px; }
 .empty { text-align:center; color:var(--ink-2); padding:60px 20px; font-size:15px;
   background:var(--surface); border:1px solid var(--border); border-radius:4px; }
 .footer-note { color:var(--muted); font-size:11.5px; margin-top:26px; line-height:1.6;
@@ -204,15 +204,6 @@ td.na { color:var(--muted); }
 
     <div class="section">
       <div class="section-head">
-        <h2>Continental fare index</h2>
-        <span class="note" id="indexNote">average lowest CX fare by continent, per collection day</span>
-      </div>
-      <div id="indexChart"></div>
-      <div class="pending" id="indexPending" style="display:none"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-head">
         <h2>The board</h2>
         <span class="note" id="boardNote"></span>
       </div>
@@ -221,11 +212,39 @@ td.na { color:var(--muted); }
 
     <div class="section">
       <div class="section-head">
-        <h2>Movers</h2>
-        <span class="note">largest day-over-day changes · <span class="delta-down">green = getting cheaper</span></span>
+        <h2>Departure watch — the same flight, tracked</h2>
+        <span class="note">flights leaving in +7 / +14 / +30 days: today's price for that exact departure,
+        its move since yesterday, and since tracking began</span>
+      </div>
+      <div style="overflow-x:auto"><table id="watchTable">
+        <thead><tr>
+          <th data-k="city">Destination</th><th data-k="continent">Continent</th>
+          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
+          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
+          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div class="pending" id="watchPending" style="display:none"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Movers — same flight, same departure</h2>
+        <span class="note"><span class="delta-down">green = getting cheaper</span> · window:</span>
+        <div class="chips" id="moverWindowChips" style="margin:0"></div>
       </div>
       <div class="movers" id="moversWrap"></div>
       <div class="pending" id="moversPending" style="display:none"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h2>Same-flight fare index</h2>
+        <span class="note" id="indexNote">matched identical flights (route + departure date) · first observation day = 100</span>
+      </div>
+      <div id="indexChart"></div>
+      <div class="pending" id="indexPending" style="display:none"></div>
     </div>
 
     <div class="section" id="drillCard" style="display:none">
@@ -278,10 +297,12 @@ td.na { color:var(--muted); }
       </div>
       <button class="btn" onclick="closeModal()">✕</button>
     </div>
+    <h4>Booking curves — the same flight re-priced as departure approaches</h4>
+    <div id="bookingChart"></div>
+    <h4>Forward fare curve — today's price for every departure date</h4>
+    <div id="curveChart"></div>
     <h4>Collected fare history — lowest CX one-way at each booking horizon</h4>
     <div id="histChart"></div>
-    <h4>Forward fare curve — price vs departure date</h4>
-    <div id="curveChart"></div>
   </div>
 </div>
 
@@ -291,11 +312,13 @@ const $ = s => document.querySelector(s);
 const CONT_COLOR_SLOT = { "Africa":"--s1","Americas":"--s2","Asia":"--s3",
                           "Australia":"--s4","Europe":"--s5","Middle East":"--s6" };
 const state = {
-  dir:"out", horizon:30, meta:null, summary:null, trends:null, movers:null,
+  dir:"out", horizon:30, meta:null, summary:null, trends:null,
+  drift:null, flightMovers:null, moverWindow:1, watch:null,
   drillContinent:null, drillRows:[], regionFilter:null,
-  sortKey:"out_price", sortAsc:true,
+  sortKey:"out_price", sortAsc:true, watchSortKey:"continent", watchSortAsc:true,
   modalRoute:null, modalDir:"out", modalCache:{},
   charts:{}, polling:null, pollFails:0,
+  seq:{summary:0, trends:0, drift:0, movers:0, watch:0, drill:0},
 };
 const fmt = v => v==null ? "—" : "$" + Math.round(v).toLocaleString("en-US");
 const fmtD = v => (v>0?"+$":"−$") + Math.abs(Math.round(v)).toLocaleString("en-US");
@@ -311,6 +334,9 @@ function staticFile(path){
   if(p === "/api/summary") return `api/summary-${h}-${d}.json`;
   if(p === "/api/trends") return `api/trends-${h}-${d}.json`;
   if(p === "/api/movers") return `api/movers-${h}-${d}.json`;
+  if(p === "/api/drift") return "api/drift.json";
+  if(p === "/api/flight-movers") return `api/flight-movers-${q.get("window")||1}.json`;
+  if(p === "/api/departure-watch") return "api/departure-watch.json";
   if(p === "/api/refresh/status") return "api/refresh-status.json";
   let m = p.match(/^\/api\/continent\/([^/]+)$/);
   if(m) return `api/continent-${decodeURIComponent(m[1]).replace(/ /g,"_")}-${h}.json`;
@@ -345,7 +371,8 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll)
 
 /* ---------- controls ---------- */
 function reloadView(){
-  return Promise.all([loadSummary(), loadTrends(), loadMovers()])
+  return Promise.all([loadSummary(), loadTrends(), loadDrift(),
+                      loadFlightMovers(), loadWatch()])
     .then(()=>{ if(state.drillContinent) return loadDrill(state.drillContinent); })
     .then(clearErr)
     .catch(e=>showErr("Failed to load data: "+e.message));
@@ -391,22 +418,50 @@ async function loadMeta(){
   $("#emptyState").style.display = last ? "none" : "block";
   $("#mainView").style.display = last ? "" : "none";
 }
+/* every loader carries a sequence token so a slow older response can never
+   overwrite a newer selection's data (review finding) */
 async function loadSummary(){
-  state.summary = await api(`/api/summary?horizon=${state.horizon}&direction=${state.dir}`);
-  renderKpis(); renderBoard();
+  const s=++state.seq.summary;
+  const r = await api(`/api/summary?horizon=${state.horizon}&direction=${state.dir}`);
+  if(s!==state.seq.summary) return;
+  state.summary = r; renderKpis(); renderBoard();
 }
-async function loadTrends(){
-  try{ state.trends = await api(`/api/trends?horizon=${state.horizon}&direction=${state.dir}`); }
-  catch(e){ state.trends = null; }
-  renderIndexChart(); renderBoard(); renderKpis();
+async function loadTrends(){   /* card sparklines only */
+  const s=++state.seq.trends;
+  let r=null;
+  try{ r = await api(`/api/trends?horizon=${state.horizon}&direction=${state.dir}`); }
+  catch(e){}
+  if(s!==state.seq.trends) return;
+  state.trends = r; renderBoard();
 }
-async function loadMovers(){
-  try{ state.movers = await api(`/api/movers?horizon=${state.horizon}&direction=${state.dir}&limit=8`); }
-  catch(e){ state.movers = null; }
-  renderMovers();
+async function loadDrift(){
+  const s=++state.seq.drift;
+  let r=null;
+  try{ r = await api("/api/drift"); }
+  catch(e){}
+  if(s!==state.seq.drift) return;
+  state.drift = r; renderDriftChart(); renderKpis();
+}
+async function loadFlightMovers(){
+  const s=++state.seq.movers;
+  let r=null;
+  try{ r = await api(`/api/flight-movers?window=${state.moverWindow}&limit=10`); }
+  catch(e){}
+  if(s!==state.seq.movers) return;
+  state.flightMovers = r; renderMovers();
+}
+async function loadWatch(){
+  const s=++state.seq.watch;
+  let r=null;
+  try{ r = await api("/api/departure-watch"); }
+  catch(e){}
+  if(s!==state.seq.watch) return;
+  state.watch = r; renderWatch();
 }
 async function loadDrill(name){
+  const s=++state.seq.drill;
   const d = await api(`/api/continent/${encodeURIComponent(name)}?horizon=${state.horizon}`);
+  if(s!==state.seq.drill) return;
   state.drillContinent = name;
   state.drillRows = d.rows; state.regionFilter=null;
   renderDrill(d);
@@ -434,10 +489,6 @@ function mkChart(id){
 /* ---------- KPI strip ---------- */
 function renderKpis(){
   const s=state.summary; if(!s||s.empty) return;
-  const t=state.trends;
-  const allRows=[];
-  // cheapest / priciest route come from the continent detail cached in drill?
-  // use summary min/max across continents instead
   let mn=null, mx=null, mnC="", mxC="";
   s.continents.forEach(c=>{
     if(c.min!=null && (mn==null||c.min<mn)){ mn=c.min; mnC=c.name; }
@@ -445,15 +496,27 @@ function renderKpis(){
   });
   const priced=s.continents.reduce((a,c)=>a+c.routes_priced,0);
   const total=s.continents.reduce((a,c)=>a+c.routes_total,0);
-  const ov = t?.overall||[];
-  const nowAvg = ov.length ? ov[ov.length-1].avg : null;
-  const prevAvg = ov.length>1 ? ov[ov.length-2].avg : null;
-  const chg = (nowAvg!=null&&prevAvg!=null) ? nowAvg-prevAvg : null;
-  const pct = chg!=null&&prevAvg ? 100*chg/prevAvg : null;
+  /* overall 1-day same-flight drift: n-weighted mean of the latest matched drift */
+  let driftTxt='<span style="color:var(--muted);font-size:18px">from day 2</span>';
+  let driftSub="matched identical flights vs yesterday";
+  const d=state.drift;
+  if(d && d.dates && d.dates.length>1){
+    const last=d.dates[d.dates.length-1];
+    let wsum=0, n=0;
+    Object.values(d.drift||{}).forEach(arr=>{
+      const e=(arr||[]).find(x=>x.date===last);
+      if(e){ wsum+=e.pct*e.n; n+=e.n; }
+    });
+    if(n){
+      const pct=wsum/n;
+      driftTxt=`<span class="${pct<-0.005?"delta-down":pct>0.005?"delta-up":""}">${pct>0?"+":""}${pct.toFixed(2)}%</span>`;
+      driftSub=`across ${n.toLocaleString()} matched flights vs yesterday`;
+    }
+  }
   $("#kpiStrip").innerHTML = `
-    <div class="kpi"><div class="microlabel">Network average</div>
-      <div class="v serif">${fmt(nowAvg)}</div>
-      <div class="d">${chg!=null?deltaSpan(chg,pct):"vs yesterday: available after day 2"}</div></div>
+    <div class="kpi"><div class="microlabel">Same-flight drift (1 day)</div>
+      <div class="v serif">${driftTxt}</div>
+      <div class="d">${driftSub}</div></div>
     <div class="kpi"><div class="microlabel">Cheapest route fare</div>
       <div class="v serif">${fmt(mn)}</div><div class="d">${mnC}</div></div>
     <div class="kpi"><div class="microlabel">Priciest route fare</div>
@@ -463,27 +526,29 @@ function renderKpis(){
       <div class="d">${state.dir==="out"?"outbound":"inbound"} · +${state.horizon} d departure</div></div>`;
 }
 
-/* ---------- fare index chart ---------- */
-function renderIndexChart(){
+/* ---------- same-flight fare index (matched, cumulative, base 100) ---------- */
+function renderDriftChart(){
   const t=chartTheme();
-  const tr=state.trends;
+  const d=state.drift;
   const el=$("#indexPending");
-  if(!tr || !tr.dates || !tr.dates.length){ el.style.display="block";
-    el.textContent="Fare-index history is unavailable (endpoint not reachable)."; return; }
-  if(tr.dates.length<2){
+  if(!d || !d.dates || !d.dates.length){ el.style.display="block";
+    el.textContent="Same-flight index is unavailable (endpoint not reachable).";
+    if(state.charts.indexChart){ state.charts.indexChart.dispose(); delete state.charts.indexChart; }
+    return; }
+  if(d.dates.length<2){
     el.style.display="block";
-    el.textContent=`The index line begins with the second collection day — tomorrow's 07:30 run. Today (${tr.dates[0]}) is the baseline.`;
+    el.textContent=`The index needs the same flights re-priced on a second day — it starts moving with tomorrow's 07:30 collection. Today (${d.dates[0]}) = 100.`;
   } else el.style.display="none";
   const c=mkChart("indexChart");
-  const names=Object.keys(tr.continents).sort();
+  const names=Object.keys(d.index||{}).sort();
   const series=names.map(name=>({
     name, type:"line", symbolSize:7, lineStyle:{width:2},
     itemStyle:{color:contColor(name)}, connectNulls:true,
-    endLabel: tr.dates.length>1 ? {show:true, formatter:name, color:t.ink2, fontSize:11,
+    endLabel: d.dates.length>1 ? {show:true, formatter:name, color:t.ink2, fontSize:11,
       distance:6} : {show:false},
-    data:tr.dates.map(d=>{
-      const pt=tr.continents[name].find(x=>x.date===d);
-      return pt?pt.avg:null;
+    data:d.dates.map(dt=>{
+      const pt=(d.index[name]||[]).find(x=>x.date===dt);
+      return pt?pt.idx:null;
     }),
   }));
   c.setOption({
@@ -491,11 +556,12 @@ function renderIndexChart(){
     grid:{left:8,right:90,top:28,bottom:8,containLabel:true},
     legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
     tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
-      textStyle:{color:t.ink, fontSize:12}, valueFormatter:v=>fmt(v)},
-    xAxis:{type:"category", data:tr.dates, axisLabel:{color:t.muted, fontSize:11},
+      textStyle:{color:t.ink, fontSize:12},
+      valueFormatter:v=>v==null?"—":v.toFixed(1)},
+    xAxis:{type:"category", data:d.dates, axisLabel:{color:t.muted, fontSize:11},
       axisLine:{lineStyle:{color:t.axis}}, axisTick:{show:false}},
     yAxis:{type:"value", scale:true,
-      axisLabel:{color:t.muted, fontSize:11, formatter:v=>"$"+v.toLocaleString()},
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>v.toFixed(0)},
       splitLine:{lineStyle:{color:t.grid}}},
     series,
   });
@@ -542,35 +608,103 @@ function renderBoard(){
   });
 }
 
-/* ---------- movers ---------- */
+/* ---------- same-flight movers ---------- */
+function buildMoverChips(){
+  const chips=$("#moverWindowChips"); chips.innerHTML="";
+  [1,7,14,30].forEach(w=>{
+    const b=document.createElement("button");
+    b.className="chip"+(w===state.moverWindow?" on":"");
+    b.textContent=w===1?"1 day":`${w} days`;
+    b.onclick=()=>{ state.moverWindow=w;
+      [...chips.children].forEach(c=>c.classList.toggle("on",c===b));
+      loadFlightMovers(); };
+    chips.appendChild(b);
+  });
+}
 function renderMovers(){
-  const m=state.movers, wrap=$("#moversWrap"), pend=$("#moversPending");
+  const m=state.flightMovers, wrap=$("#moversWrap"), pend=$("#moversPending");
   wrap.innerHTML="";
+  if(!$("#moverWindowChips").children.length) buildMoverChips();
   if(!m){ pend.style.display="block";
-    pend.textContent="Movers are unavailable (endpoint not reachable)."; return; }
+    pend.textContent="Same-flight movers are unavailable (endpoint not reachable)."; return; }
   if(!m.available){ pend.style.display="block";
-    pend.textContent="Movers appear once there are two collection days to compare — after tomorrow's 07:30 run.";
+    pend.textContent="Same-flight movers compare identical departures across days — " +
+      (m.reason||"") + ". The 1-day window fills tomorrow; 7/14/30-day windows as tracking accumulates.";
     return; }
   pend.style.display="none";
-  const dirLabel = state.dir==="out" ? "HKG→" : "→HKG";
+  const wtxt = m.window_actual===m.window_requested ? `${m.window_actual}-day window`
+    : `${m.window_actual}-day window (requested ${m.window_requested})`;
   const panel=(title, cls, rows, emptyTxt)=>{
     const rowsHtml = rows.length ? rows.map(r=>`
-      <div class="mover-row" data-iata="${r.iata}">
-        <span class="route"><b>${dirLabel}${r.iata}</b> <small>${r.city}, ${r.continent}</small></span>
+      <div class="mover-row" data-iata="${r.iata}" data-depart="${r.depart_date}">
+        <span class="route"><b>HKG→${r.iata}</b> dep ${r.depart_date.slice(5)}
+          <small>${r.city}, ${r.continent}</small></span>
         <span>${fmt(r.price)}</span>
         <span>${deltaSpan(r.delta, r.pct)}</span>
       </div>`).join("") : `<div style="color:var(--muted);font-size:12.5px;padding:6px 0">${emptyTxt}</div>`;
     return `<div class="mover-panel"><h3 class="${cls}">${title}</h3>${rowsHtml}</div>`;
   };
   wrap.innerHTML =
-    panel("Fares falling", "down", m.fallers, "no routes fell today") +
-    panel("Fares rising", "up", m.risers, "no routes rose today");
+    panel(`Same flight, cheaper — ${wtxt}`, "down", m.fallers, "no tracked flights got cheaper") +
+    panel(`Same flight, pricier — ${wtxt}`, "up", m.risers, "no tracked flights got pricier");
   wrap.querySelectorAll(".mover-row").forEach(el=>{
     el.onclick=()=>{
-      const iata=el.dataset.iata;
-      const meta=(state.meta.routes||[]).find(r=>r.iata===iata);
-      if(meta) openModal({iata, city:meta.city, airport:meta.airport, region:meta.region,
-                          official_rt:null});
+      const meta=(state.meta.routes||[]).find(r=>r.iata===el.dataset.iata);
+      if(meta) openModal({iata:el.dataset.iata, city:meta.city, airport:meta.airport,
+                          region:meta.region, official_rt:null}, el.dataset.depart, "out");
+    };
+  });
+}
+
+/* ---------- departure watch ---------- */
+function watchCell(c){
+  if(!c) return ['<td class="na">—</td>','<td class="na">—</td>'];
+  const pctSpan=(p)=> p==null ? '<span style="color:var(--muted)">—</span>'
+    : `<span class="${p<0?"delta-down":p>0?"delta-up":""}">${p>0?"+":""}${p.toFixed(1)}%</span>`;
+  return [
+    `<td title="departs ${c.depart} · ${c.n_obs} observation(s)">${fmt(c.price)}<span class="src">${c.src}</span></td>`,
+    `<td>${pctSpan(c.d1_pct)} / ${pctSpan(c.since_pct)}</td>`,
+  ];
+}
+function renderWatch(){
+  const w=state.watch, pend=$("#watchPending"), tb=$("#watchTable tbody");
+  tb.innerHTML="";
+  if(!w){ pend.style.display="block";
+    pend.textContent="Departure watch is unavailable (endpoint not reachable)."; return; }
+  pend.style.display = w.prev_date ? "none" : "block";
+  if(!w.prev_date) pend.textContent =
+    "Prices shown are today's for these exact departures. The Δ columns (change since yesterday / since tracking began) fill from day 2 as the same flights are re-observed.";
+  /* label the Δ columns with the REAL gap to the previous collection */
+  const gap = w.prev_gap_days || 1;
+  [...$("#watchTable thead tr").children].forEach(th=>{
+    if(th.dataset.k && th.dataset.k.startsWith("c")) th.textContent=`Δ ${gap}d / since`;
+  });
+  const k=state.watchSortKey, asc=state.watchSortAsc;
+  const val=r=>{
+    if(k==="city") return r.city; if(k==="continent") return r.continent;
+    const m={p7:["w7","price"],p14:["w14","price"],p30:["w30","price"],
+             c7:["w7","d1_pct"],c14:["w14","d1_pct"],c30:["w30","d1_pct"]}[k];
+    return m ? (r[m[0]]?.[m[1]] ?? null) : r.city;
+  };
+  const rows=[...w.rows].sort((a,b)=>{
+    const va=val(a), vb=val(b);
+    if(va==null) return 1; if(vb==null) return -1;
+    if(typeof va==="string"){ const c=va.localeCompare(vb); return asc?c:-c; }
+    return asc?va-vb:vb-va;
+  });
+  rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><b>${r.city}</b> <span style="color:var(--muted)">${r.iata}</span></td>
+      <td style="text-align:left">${r.continent}</td>
+      ${watchCell(r.w7).join("")}${watchCell(r.w14).join("")}${watchCell(r.w30).join("")}`;
+    tr.onclick=()=>openModal(r, r.w7?.depart || r.w14?.depart || r.w30?.depart, "out");
+    tb.appendChild(tr);
+  });
+  [...$("#watchTable thead tr").children].forEach(th=>{
+    th.onclick=()=>{
+      const key=th.dataset.k;
+      state.watchSortAsc = state.watchSortKey===key ? !state.watchSortAsc : true;
+      state.watchSortKey=key; renderWatch();
     };
   });
 }
@@ -651,9 +785,12 @@ $("#modalDirSeg").addEventListener("click", e=>{
   renderModalCharts().catch(e2=>showErr("Failed to load route: "+e2.message));
 });
 $("#modalBack").addEventListener("click", e=>{ if(e.target.id==="modalBack") closeModal(); });
-function closeModal(){ $("#modalBack").classList.remove("show"); state.modalRoute=null; }
-async function openModal(row){
-  state.modalRoute=row; state.modalDir=state.dir;
+function closeModal(){ $("#modalBack").classList.remove("show");
+  state.modalRoute=null; state.modalFocusDepart=null; }
+async function openModal(row, focusDepart, dir){
+  /* watch/mover entries carry outbound-only data, so they pass dir="out"
+     explicitly - state.dir may be "in" (review finding) */
+  state.modalRoute=row; state.modalDir=dir||state.dir; state.modalFocusDepart=focusDepart||null;
   [...$("#modalDirSeg").children].forEach(b=>
     b.classList.toggle("on", b.dataset.dir===state.modalDir));
   $("#modalTitle").textContent=`Hong Kong ⇄ ${row.city} (${row.iata})`;
@@ -672,12 +809,82 @@ async function routeData(dir){
   }
   return state.modalCache[key];
 }
+function isoAddDays(iso, n){
+  /* UTC throughout - local-time parsing shifted a day on UTC+8 (review finding) */
+  const d=new Date(iso+"T00:00:00Z"); d.setUTCDate(d.getUTCDate()+n);
+  return d.toISOString().slice(0,10);
+}
+function isoDayDiff(a, b){ /* b - a in days */
+  return Math.round((new Date(b+"T00:00:00") - new Date(a+"T00:00:00"))/86400000);
+}
+function renderBookingChart(data, t){
+  const curves=data.booking_curves||{};
+  const keys=Object.keys(curves);
+  const cc=mkChart("bookingChart");
+  const latestCol=state.meta.dates?.[0];
+  const targets=[];
+  if(state.modalFocusDepart && curves[state.modalFocusDepart])
+    targets.push(state.modalFocusDepart);
+  if(latestCol) [7,14,30].forEach(w=>{
+    const want=isoAddDays(latestCol, w);
+    let best=null, gap=null;
+    keys.forEach(kk=>{
+      const g=Math.abs(isoDayDiff(want, kk));
+      if(g<=3 && (gap==null||g<gap)){ best=kk; gap=g; }
+    });
+    if(best && !targets.includes(best)) targets.push(best);
+  });
+  /* One line per departure from the CALENDAR series only (re-observed daily);
+     Google spot-checks plot as detached markers - mixing them into one line
+     would draw cross-source price gaps as fake moves (review finding). */
+  const series=[];
+  targets.slice(0,4).forEach((dep,i)=>{
+    const cal=curves[dep].filter(o=>o.src==="cal");
+    const goog=curves[dep].filter(o=>o.src==="g");
+    series.push({
+      name:`departs ${dep}`, type:"line", symbolSize:8, lineStyle:{width:2},
+      itemStyle:{color:t.s[i%6]},
+      data:cal.map(o=>[isoDayDiff(o.obs, dep), o.price]).sort((a,b)=>b[0]-a[0]),
+    });
+    if(goog.length) series.push({
+      name:`departs ${dep}`, type:"scatter", symbol:"diamond", symbolSize:9,
+      itemStyle:{color:t.s[i%6], opacity:.75},
+      tooltip:{valueFormatter:v=>fmt(Array.isArray(v)?v[1]:v)+" (Google)"},
+      data:goog.map(o=>[isoDayDiff(o.obs, dep), o.price]),
+    });
+  });
+  const lineSeries=series.filter(s=>s.type==="line");
+  const singlePoints = lineSeries.length && series.every(s=>s.data.length<2);
+  cc.setOption({
+    textStyle:{fontFamily:'system-ui,sans-serif'},
+    grid:{left:8,right:16,top:30,bottom:24,containLabel:true},
+    legend:{top:0, textStyle:{color:t.ink2, fontSize:11}, icon:"circle", itemWidth:9},
+    tooltip:{trigger:"axis", backgroundColor:t.surface, borderColor:t.grid,
+      textStyle:{color:t.ink, fontSize:12},
+      valueFormatter:v=>fmt(Array.isArray(v)?v[1]:v)},
+    xAxis:{type:"value", inverse:true, name:"days to departure", nameLocation:"middle",
+      nameGap:26, nameTextStyle:{color:t.muted, fontSize:11}, minInterval:1,
+      axisLabel:{color:t.muted, fontSize:11}, axisLine:{lineStyle:{color:t.axis}},
+      splitLine:{show:false}},
+    yAxis:{type:"value", scale:true,
+      axisLabel:{color:t.muted, fontSize:11, formatter:v=>"$"+v.toLocaleString()},
+      splitLine:{lineStyle:{color:t.grid}}},
+    series:series.length?series:[{type:"line",data:[]}],
+    graphic: series.length ? (singlePoints ? [{type:"text", left:"center", bottom:2,
+      style:{text:"each flight gains one point per day of tracking — lines form as observations accumulate",
+             fill:t.muted, fontSize:11.5, align:"center"}}] : [])
+      : [{type:"text", left:"center", top:"middle",
+      style:{text:"No tracked future departures for this direction yet",
+             fill:t.muted, fontSize:12.5, align:"center"}}],
+  });
+}
 async function renderModalCharts(){
   if(!state.modalRoute) return;
   const t=chartTheme();
-  const openedFor=state.modalRoute;
-  const data=await routeData(state.modalDir);
-  if(state.modalRoute!==openedFor) return;
+  const openedFor=state.modalRoute, dirFor=state.modalDir;
+  const data=await routeData(dirFor);
+  if(state.modalRoute!==openedFor || state.modalDir!==dirFor) return;
+  renderBookingChart(data, t);
   const horizons=state.meta.horizons;
   const dates=[...new Set(data.google_history.map(h=>h.collected_date))].sort();
   const series=horizons.map((h,i)=>({
@@ -788,15 +995,16 @@ async function pollStatus(loop){
 /* ---------- boot ---------- */
 function renderAll(){
   if(state.summary){ renderKpis(); renderBoard(); }
-  if(state.trends) renderIndexChart();
-  if(state.movers) renderMovers();
+  if(state.drift) renderDriftChart();
+  if(state.flightMovers) renderMovers();
+  if(state.watch) renderWatch();
   if(state.drillContinent && state.drillRows.length) renderDrillTable();
   if(state.modalRoute) renderModalCharts().catch(()=>{});
 }
 addEventListener("resize", ()=>Object.values(state.charts).forEach(c=>c.resize()));
 if(typeof ResizeObserver!=="undefined"){
   const ro=new ResizeObserver(()=>Object.values(state.charts).forEach(c=>c.resize()));
-  ["indexChart","histChart","curveChart"].forEach(id=>ro.observe(document.getElementById(id)));
+  ["indexChart","histChart","curveChart","bookingChart"].forEach(id=>ro.observe(document.getElementById(id)));
 }
 (async function(){
   if(typeof echarts==="undefined"){
