@@ -109,55 +109,76 @@ def _route_fare(google: dict, calendar: dict, iata: str, direction: str):
     return None, None, row
 
 
+def _exact_departure_prices(conn, cdate: str, horizon: int, direction: str,
+                            source: str | None = None) -> dict:
+    """route iata -> cheapest observed one-way price on collection day `cdate`
+    for the EXACT departure cdate+horizon (any source unless one is named)."""
+    depart = (date.fromisoformat(cdate) + timedelta(days=horizon)).isoformat()
+    src_clause = "AND source=?" if source else "AND source IN ('cathay_calendar','google_flights')"
+    if direction == "out":
+        sql = f"""SELECT destination AS r, MIN(price) AS p FROM fares
+                  WHERE collected_date=? AND depart_date=? AND origin='HKG'
+                    AND trip_type='one-way' AND price IS NOT NULL {src_clause}
+                  GROUP BY destination"""
+    else:
+        sql = f"""SELECT origin AS r, MIN(price) AS p FROM fares
+                  WHERE collected_date=? AND depart_date=? AND destination='HKG'
+                    AND trip_type='one-way' AND price IS NOT NULL {src_clause}
+                  GROUP BY origin"""
+    params = [cdate, depart] + ([source] if source else [])
+    return {row["r"]: row["p"] for row in conn.execute(sql, params)
+            if row["r"] in DEST_META}
+
+
 def api_summary(conn, qs) -> dict:
+    """Continent averages over the cheapest observed price for the EXACT
+    departure latest+horizon - the same single-flight basis as the watch and
+    drill tables, so every surface tells one story. Trend = same-flight
+    calendar-vs-calendar for that exact departure."""
     horizon = int(qs.get("horizon", ["30"])[0])
     direction = qs.get("direction", ["out"])[0]
-    dates = collection_dates(conn)
+    dates = sorted(collection_dates(conn))
     if not dates:
         return {"empty": True, "continents": [], "dates": []}
-    latest, prev = dates[0], (dates[1] if len(dates) > 1 else None)
+    latest, prev = dates[-1], (dates[-2] if len(dates) > 1 else None)
 
-    def snapshot(cdate):
-        google = _google_fares(conn, cdate, horizon)
-        cal = _calendar_fallback(conn, cdate, horizon)
-        out = {}
-        for iata in DEST_META:
-            price, src, _ = _route_fare(google, cal, iata, direction)
-            if price is not None:
-                out[iata] = (price, src)
-        return out
-
-    latest_fares = snapshot(latest)
-    prev_fares = snapshot(prev) if prev else {}
+    latest_fares = _exact_departure_prices(conn, latest, horizon, direction)
+    # same-flight trend: the SAME departure date, calendar-observed both days
+    depart = (date.fromisoformat(latest) + timedelta(days=horizon)).isoformat()
+    cal_today = cal_prev = {}
+    if prev and direction == "out":
+        def cal_at(day):
+            return {row["r"]: row["p"] for row in conn.execute(
+                """SELECT destination AS r, MIN(price) AS p FROM fares
+                   WHERE collected_date=? AND depart_date=? AND origin='HKG'
+                     AND source='cathay_calendar' AND trip_type='one-way'
+                     AND price IS NOT NULL GROUP BY destination""",
+                (day, depart)) if row["r"] in DEST_META}
+        cal_today, cal_prev = cal_at(latest), cal_at(prev)
 
     continents: dict[str, dict] = {}
     for iata, meta in DEST_META.items():
         c = continents.setdefault(meta["continent"], {
-            "name": meta["continent"], "routes_total": 0, "prices": [], "prev": [],
-            "pair_deltas": []})
+            "name": meta["continent"], "routes_total": 0, "prices": [],
+            "pair_pcts": []})
         c["routes_total"] += 1
         if iata in latest_fares:
-            c["prices"].append(latest_fares[iata][0])
-        if iata in prev_fares:
-            c["prev"].append(prev_fares[iata][0])
-        if iata in latest_fares and iata in prev_fares:
-            c["pair_deltas"].append(latest_fares[iata][0] - prev_fares[iata][0])
+            c["prices"].append(latest_fares[iata])
+        if iata in cal_today and cal_prev.get(iata):
+            c["pair_pcts"].append(
+                100 * (cal_today[iata] - cal_prev[iata]) / cal_prev[iata])
 
     result = []
     for c in continents.values():
         p = c.pop("prices")
-        pv = c.pop("prev")
-        pd = c.pop("pair_deltas")
+        pp = c.pop("pair_pcts")
         c.update(
             routes_priced=len(p),
             avg=round(sum(p) / len(p)) if p else None,
             min=min(p) if p else None,
             max=max(p) if p else None,
-            prev_avg=round(sum(pv) / len(pv)) if pv else None,
-            # day-over-day movement over routes priced on BOTH days - a route
-            # entering/leaving coverage must not masquerade as a fare move
-            trend_delta=round(sum(pd) / len(pd)) if pd else None,
-            trend_routes=len(pd),
+            trend_pct=round(sum(pp) / len(pp), 1) if pp else None,
+            trend_routes=len(pp),
         )
         result.append(c)
     result.sort(key=lambda c: -(c["avg"] or 0))
@@ -187,9 +208,9 @@ def api_trends(conn, qs) -> dict:
     continents: dict[str, list] = {}
     overall = []
     for cdate in dates:
-        snap = _snapshot(conn, cdate, horizon, direction)
+        snap = _exact_departure_prices(conn, cdate, horizon, direction)
         by_cont: dict[str, list] = {}
-        for iata, (price, _) in snap.items():
+        for iata, price in snap.items():
             by_cont.setdefault(DEST_META[iata]["continent"], []).append(price)
         for cont, prices in by_cont.items():
             continents.setdefault(cont, []).append(

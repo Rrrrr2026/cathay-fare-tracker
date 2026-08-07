@@ -587,13 +587,14 @@ function sparkSvg(pts, color){
 function renderBoard(){
   const s=state.summary; if(!s||s.empty) return;
   $("#boardNote").textContent =
-    `lowest CX one-way ${s.direction==="out"?"from":"to"} Hong Kong, departing +${s.horizon} days · ${s.collected_date}`;
+    `cheapest observed one-way ${s.direction==="out"?"from":"to"} Hong Kong for the EXACT departure +${s.horizon} days (${s.collected_date}) · official calendar + Google, single flights only`;
   const board=$("#continentBoard"); board.innerHTML="";
   s.continents.forEach(r=>{
     const color=contColor(r.name);
     const pts=state.trends?.continents?.[r.name]||[];
-    const chg = r.trend_delta!=null
-      ? deltaSpan(r.trend_delta, r.prev_avg?100*r.trend_delta/r.prev_avg:null)
+    const chg = r.trend_pct!=null
+      ? `<span class="${r.trend_pct<0?"delta-down":r.trend_pct>0?"delta-up":""}">`
+        +`${r.trend_pct>0?"+":""}${r.trend_pct.toFixed(1)}% same-flight (${r.trend_routes})</span>`
       : '<span style="color:var(--muted)">Δ from day 2</span>';
     const d=document.createElement("div");
     d.className="ccard"+(state.drillContinent===r.name?" on":"");
