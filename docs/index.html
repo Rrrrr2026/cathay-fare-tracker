@@ -221,6 +221,29 @@ td.na { color:var(--muted); }
       <div class="pending" id="forwardPending" style="display:none"></div>
     </div>
 
+    <div class="section" id="drillCard" style="display:none">
+      <div class="section-head">
+        <h2 id="drillTitle"></h2>
+        <span class="note" id="drillSub"></span>
+      </div>
+      <div class="chips" id="regionChips"></div>
+      <div style="overflow-x:auto"><table id="drillTable">
+        <thead><tr>
+          <th data-k="city">Destination</th><th data-k="iata">Code</th>
+          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
+          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
+          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="footer-note" style="border:0;margin-top:8px;padding-top:0">
+      One-way single-flight prices only, for the exact departures +7/+14/+30
+      days out. <b>cal</b> = Cathay's official per-day calendar, <b>g</b> =
+      Google Flights lowest CX itinerary. Δ compares the SAME flight across
+      collection days (official calendar only, so inbound Δ stays "—" until
+      Google re-observes a departure).</p>
+    </div>
+
     <div class="section">
       <div class="section-head">
         <h2>Departure watch — the same flight, tracked</h2>
@@ -258,28 +281,6 @@ td.na { color:var(--muted); }
       <div class="pending" id="indexPending" style="display:none"></div>
     </div>
 
-    <div class="section" id="drillCard" style="display:none">
-      <div class="section-head">
-        <h2 id="drillTitle"></h2>
-        <span class="note" id="drillSub"></span>
-      </div>
-      <div class="chips" id="regionChips"></div>
-      <div style="overflow-x:auto"><table id="drillTable">
-        <thead><tr>
-          <th data-k="city">Destination</th><th data-k="iata">Code</th>
-          <th data-k="p7">Departs +7 d</th><th data-k="c7">Δ 1d / since</th>
-          <th data-k="p14">Departs +14 d</th><th data-k="c14">Δ 1d / since</th>
-          <th data-k="p30">Departs +30 d</th><th data-k="c30">Δ 1d / since</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table></div>
-      <p class="footer-note" style="border:0;margin-top:8px;padding-top:0">
-      One-way single-flight prices only, for the exact departures +7/+14/+30
-      days out. <b>cal</b> = Cathay's official per-day calendar, <b>g</b> =
-      Google Flights lowest CX itinerary. Δ compares the SAME flight across
-      collection days (official calendar only, so inbound Δ stays "—" until
-      Google re-observes a departure).</p>
-    </div>
   </div>
 
   <p class="footer-note">
@@ -761,7 +762,12 @@ function renderWatch(){
   /* label the Δ columns with the REAL gap to the previous collection */
   const gap = w.prev_gap_days || 1;
   [...$("#watchTable thead tr").children].forEach(th=>{
-    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)) th.textContent=`Δ ${gap}d / since`;
+    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)){
+      th.textContent=`Δ ${gap}d / since`;
+      th.title=`Same flight, re-priced: Δ ${gap}d = change vs the previous collection `
+        +`(${gap} day(s) ago) · since = cumulative change since tracking of that departure began. `
+        +`Fills from the second observation day.`;
+    }
   });
   const k=state.watchSortKey, asc=state.watchSortAsc;
   const val=r=>{
@@ -844,7 +850,12 @@ function renderDrillTable(){
   /* label Δ headers with the real gap to the previous collection */
   const gap = state.drillData?.prev_gap_days || 1;
   [...$("#drillTable thead tr").children].forEach(th=>{
-    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)) th.textContent=`Δ ${gap}d / since`;
+    if(th.dataset.k && /^c\d+$/.test(th.dataset.k)){
+      th.textContent=`Δ ${gap}d / since`;
+      th.title=`Same flight, re-priced: Δ ${gap}d = change vs the previous collection `
+        +`(${gap} day(s) ago) · since = cumulative change since tracking of that departure began. `
+        +`Fills from the second observation day.`;
+    }
   });
   rows.forEach(r=>{
     const tr=document.createElement("tr");
