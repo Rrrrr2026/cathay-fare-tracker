@@ -44,6 +44,7 @@ cathay-fare-tracker/
 ├─ config.json              horizons, delays, currency, server port
 ├─ routes.json              82 destinations w/ IATA + region (regenerable)
 ├─ run_daily.bat            headless daily run (Task Scheduler entry point)
+├─ run_hidden.vbs           hidden-window wrapper around run_daily.bat (the task's action since 2026-10-06)
 ├─ serve_dashboard.bat      start dashboard server + open browser
 ├─ scripts/
 │  ├─ run_daily.py          collection orchestrator (progress → data/progress.json)
@@ -77,7 +78,8 @@ run_daily.bat
 Useful dev flags: `--limit 5` (first N destinations), `--horizons 30`,
 `--sources google` or `--sources cathay`.
 
-The scheduled task **CathayFareTracker** runs `run_daily.bat` daily at 07:30.
+The scheduled task **CathayFareTracker** runs `run_daily.bat` daily at 07:30 — since 2026-10-06 through `wscript.exe run_hidden.vbs` (hidden window: no console pops up, so a run cannot be killed by closing it; the wrapper appends the bat's console output to `logs/task_YYYYMMDD.log`, kept 60 days, and passes the exit code through to the task's
+Last Run Result; `logs/last_run.log` is still written by the bat as before).
 A full run makes ~660 Google queries (2–3.5 s apart) + ~250 Cathay API calls
 and takes ≈ 45 minutes. Re-running the same day is safe: the primary key
 `(collected_date, origin, destination, depart_date, cabin, trip_type, source)`
